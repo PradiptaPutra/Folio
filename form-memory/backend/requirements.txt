@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+lxml
+python-multipart
+python-docx
