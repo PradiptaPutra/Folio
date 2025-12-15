@@ -3,7 +3,7 @@ import shutil
 from pathlib import Path
 
 from utils import WORD_DEFAULTS, txt_to_markdown
-from docx_inspector import extract_docx_styles
+from docx_inspector import extract_docx_styles, detect_style_usage
 from reference_builder import build_reference_docx
 
 from pandoc_runner import markdown_to_docx
@@ -56,8 +56,11 @@ async def upload_docx(file: UploadFile = File(...)):
     margins = extracted["margins"]
 
     resolved_styles = {}
-    for style_id in raw_styles:
+    for style_id, style_data in raw_styles.items():
         resolved_styles[style_id] = resolve_style(style_id, raw_styles)
+        # Preserve paragraph props if exist
+        if "paragraph" in style_data:
+             resolved_styles[style_id]["paragraph"] = style_data["paragraph"]
 
     resolved_styles["margins"] = margins
 
@@ -102,9 +105,29 @@ async def generate_docx(
 
     md_path.write_text(markdown, encoding="utf-8")
 
+    # retrieve styles from uploaded reference
+    # We stored resolved_styles in the upload response, but the server is stateless between calls
+    # Ideally, we should re-extract or store them. For now, since we have the ref_path, we can re-extract.
+    # But wait, upload endpoint returned them. The frontend might not be sending them back.
+    # Better approach: Extract on the fly from the reference docx.
+    
+    extracted = extract_docx_styles(ref_path)
+    # Get Normal style or defaults
+    normal_style = extracted["styles"].get("Normal", {})
+    paragraph_config = normal_style.get("paragraph", {})
+    
+    # Detect specific style usage (Chapter heading, body text)
+    style_usage = detect_style_usage(str(ref_path))
+    
+    style_config = {
+        "margins": extracted["margins"],
+        "paragraph": paragraph_config,
+        "mapping": style_usage
+    }
+
     # run pandoc
     try:
-        markdown_to_docx(md_path, ref_path, output_path)
+        markdown_to_docx(md_path, ref_path, output_path, style_config)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Generation failed: {e}")
 

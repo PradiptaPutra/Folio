@@ -2,8 +2,7 @@ Judul
 
 Pengembangan Website UMKM untuk Meningkatkan Visibilitas dan Penjualan Produk Lokal
 
-# BAB I
-
+# BAB I  
 Pendahuluan
 
 ## Latar Belakang
@@ -34,8 +33,7 @@ Secara teoritis memberikan referensi mengenai digitalisasi UMKM melalui teknolog
 
 Secara praktis menyediakan solusi berupa website bagi UMKM untuk mendukung kegiatan promosi.
 
-# BAB II
-
+# BAB II  
 Tinjauan Pustaka
 
 UMKM
@@ -54,8 +52,7 @@ Definisi sistem informasi, komponen, dan peran sistem informasi dalam mendukung 
 
 Ringkasan penelitian sebelumnya tentang pengembangan website UMKM atau digital marketing untuk usaha kecil.
 
-# BAB III
-
+# BAB III  
 Metodologi Penelitian
 
 ## Metode Penelitian
@@ -78,8 +75,7 @@ Alat dan Teknologi
 
 Pengembangan website menggunakan HTML, CSS, JavaScript, dan PHP atau framework yang relevan. Database MySQL dan editor kode Visual Studio Code.
 
-# BAB IV
-
+# BAB IV  
 Hasil dan Pembahasan
 
 ## Analisis Kebutuhan
@@ -102,8 +98,7 @@ Pembahasan
 
 Analisis kesesuaian antara kebutuhan awal dengan hasil implementasi serta manfaat sistem bagi pelaku UMKM.
 
-# BAB V
-
+# BAB V  
 Penutup
 
 Kesimpulan

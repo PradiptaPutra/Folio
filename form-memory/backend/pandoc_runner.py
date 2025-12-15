@@ -6,7 +6,7 @@ import shutil
 import shutil as _shutil
 
 
-def markdown_to_docx(md_path, ref_path, output_path):
+def markdown_to_docx(md_path, ref_path, output_path, style_config=None):
     # Ensure pandoc exists
     pandoc_exe = shutil.which("pandoc")
     if not pandoc_exe:
@@ -28,7 +28,7 @@ def markdown_to_docx(md_path, ref_path, output_path):
     insert_toc(primary_docx)
     
     # ✅ Enforce skripsi formatting (spacing, indent, numbering, margins)
-    enforce_skripsi_format(primary_docx)
+    enforce_skripsi_format(primary_docx, style_config)
 
     # ✅ If requested output is legacy .doc, convert from .docx
     if out_path.suffix.lower() == ".doc":

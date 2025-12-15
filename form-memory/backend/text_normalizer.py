@@ -14,10 +14,12 @@ def normalize_txt_to_markdown(text: str) -> str:
 
         # BAB I — Pendahuluan / BAB I - Pendahuluan
         # Requirement: Only 'BAB <Roman>' becomes Heading 1; the title stays plain text
+        # BAB I — Pendahuluan / BAB I - Pendahuluan
+        # Requirement: Merge into one heading with line break so both get the Chapter Heading style.
         if re.match(r"^BAB\s+[IVXLC]+\s*[-—]\s*.+$", line, re.IGNORECASE):
             bab, title = re.split(r"[-—]", line, maxsplit=1)
-            md.append(f"# {bab.strip().upper()}")
-            md.append(title.strip())
+            # Use two spaces at end of line for hard line break in Markdown
+            md.append(f"# {bab.strip().upper()}  \n{title.strip()}")
             continue
 
         # BAB I (tanpa judul)
