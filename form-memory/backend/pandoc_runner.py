@@ -2,11 +2,12 @@ import subprocess
 from pathlib import Path
 from toc_inserter import insert_toc
 from skripsi_formatter import enforce_skripsi_format
+from skripsi_enforcer import SkripsiEnforcer
 import shutil
 import shutil as _shutil
 
 
-def markdown_to_docx(md_path, ref_path, output_path, style_config=None):
+def markdown_to_docx(md_path, ref_path, output_path, style_config=None, frontmatter_data=None):
     # Ensure pandoc exists
     pandoc_exe = shutil.which("pandoc")
     if not pandoc_exe:
@@ -29,6 +30,12 @@ def markdown_to_docx(md_path, ref_path, output_path, style_config=None):
     
     # ✅ Enforce skripsi formatting (spacing, indent, numbering, margins)
     enforce_skripsi_format(primary_docx, style_config)
+
+    # ✅ Generate Front Matter if requested
+    if frontmatter_data:
+        enforcer = SkripsiEnforcer(str(primary_docx))
+        enforcer.execute_phase_4(**frontmatter_data)
+        enforcer.save()
 
     # ✅ If requested output is legacy .doc, convert from .docx
     if out_path.suffix.lower() == ".doc":

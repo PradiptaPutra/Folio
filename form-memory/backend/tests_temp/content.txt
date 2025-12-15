@@ -1,0 +1,14 @@
+
+BAB I PENDAHULUAN
+1.1 Latar Belakang
+Ini adalah latar belakang masalah. Harusnya tidak ada angka 1.1 di sini.
+
+1.2 Rumusan Masalah
+Masalahnya apa?
+
+BAB II PEMBAHASAN
+2.1 Teori
+Teori A.
+
+2.1.1 Sub-Teori
+Detail teori.

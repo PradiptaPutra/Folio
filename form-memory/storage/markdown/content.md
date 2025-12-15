@@ -3,7 +3,7 @@ Judul
 Pengembangan Website UMKM untuk Meningkatkan Visibilitas dan Penjualan Produk Lokal
 
 # BAB I  
-Pendahuluan
+PENDAHULUAN
 
 ## Latar Belakang
 
@@ -34,7 +34,7 @@ Secara teoritis memberikan referensi mengenai digitalisasi UMKM melalui teknolog
 Secara praktis menyediakan solusi berupa website bagi UMKM untuk mendukung kegiatan promosi.
 
 # BAB II  
-Tinjauan Pustaka
+TINJAUAN PUSTAKA
 
 UMKM
 
@@ -44,26 +44,26 @@ Website
 
 Konsep website, fungsi, dan manfaatnya dalam pemasaran digital. Website sebagai media komunikasi dan promosi usaha.
 
-## Sistem Informasi
+Sistem Informasi
 
 Definisi sistem informasi, komponen, dan peran sistem informasi dalam mendukung proses bisnis.
 
-## Penelitian Terdahulu
+Penelitian Terdahulu
 
 Ringkasan penelitian sebelumnya tentang pengembangan website UMKM atau digital marketing untuk usaha kecil.
 
 # BAB III  
-Metodologi Penelitian
+METODOLOGI PENELITIAN
 
-## Metode Penelitian
+Metode Penelitian
 
 Jenis penelitian Research and Development dengan pendekatan pengembangan perangkat lunak.
 
-## Metode Pengembangan Sistem
+Metode Pengembangan Sistem
 
 Menggunakan model Waterfall yang meliputi analisis kebutuhan, perancangan, implementasi, pengujian, dan evaluasi.
 
-## Teknik Pengumpulan Data
+Teknik Pengumpulan Data
 
 Observasi di UMKM terkait proses promosi.
 
@@ -76,21 +76,21 @@ Alat dan Teknologi
 Pengembangan website menggunakan HTML, CSS, JavaScript, dan PHP atau framework yang relevan. Database MySQL dan editor kode Visual Studio Code.
 
 # BAB IV  
-Hasil dan Pembahasan
+HASIL DAN PEMBAHASAN
 
-## Analisis Kebutuhan
+Analisis Kebutuhan
 
 Identifikasi kebutuhan pengguna termasuk katalog produk, informasi usaha, dan kontak pemilik.
 
-## Perancangan Sistem
+Perancangan Sistem
 
 Desain tampilan website termasuk halaman beranda, halaman produk, halaman detail produk, dan halaman admin untuk input data. Diagram use case dan ERD untuk mendukung perancangan database.
 
-## Implementasi Sistem
+Implementasi Sistem
 
 Proses pembuatan website berdasarkan desain. Tampilan halaman, sistem input produk, dan manajemen konten.
 
-## Pengujian Sistem
+Pengujian Sistem
 
 Pengujian fitur website untuk memastikan seluruh fungsi berjalan dengan baik seperti tampilan produk, pencarian, dan pengelolaan data.
 
@@ -99,7 +99,7 @@ Pembahasan
 Analisis kesesuaian antara kebutuhan awal dengan hasil implementasi serta manfaat sistem bagi pelaku UMKM.
 
 # BAB V  
-Penutup
+PENUTUP
 
 Kesimpulan
 

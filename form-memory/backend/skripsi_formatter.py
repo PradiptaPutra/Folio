@@ -68,36 +68,53 @@ class SkripsiFormatter:
         return None, None
     
     @staticmethod
-    def format_paragraph(paragraph):
+    def format_paragraph(paragraph, p_config=None):
         """
-        Format paragraph with skripsi standards:
-        - Line spacing: 1.5
-        - First-line indent: 1.25 cm
+        Format paragraph with skripsi standards or dynamic config:
+        - Line spacing: 1.5 or dynamic
+        - First-line indent: 1.25 cm or dynamic
         - Space before/after: 0 pt
         - Alignment: Justify
         """
         pPr = paragraph._element.get_or_add_pPr()
         
-        # Set line spacing (1.5)
+        # Set line spacing
         spacing = pPr.find(qn('w:spacing'))
         if spacing is None:
             spacing = OxmlElement('w:spacing')
             pPr.append(spacing)
         
-        # Line spacing 1.5 = 360 (in twentieths of a point)
-        spacing.set(qn('w:line'), '360')
-        spacing.set(qn('w:lineRule'), 'auto')
         spacing.set(qn('w:before'), str(SkripsiFormatter.PARAGRAPH_SPACE_BEFORE))
         spacing.set(qn('w:after'), str(SkripsiFormatter.PARAGRAPH_SPACE_AFTER))
+
+        if p_config and p_config.get("line_spacing"):
+            # Use dynamic spacing
+            spacing.set(qn('w:line'), str(p_config["line_spacing"]))
+            rule = p_config.get("line_rule", "auto")
+            spacing.set(qn('w:lineRule'), rule)
+        else:
+            # Default 1.5 spacing
+            spacing.set(qn('w:line'), '360')
+            spacing.set(qn('w:lineRule'), 'auto')
         
-        # Set first-line indent (1.25 cm = 708 twips)
+        # Set first-line indent
         ind = pPr.find(qn('w:ind'))
         if ind is None:
             ind = OxmlElement('w:ind')
             pPr.append(ind)
         
-        indent_twips = SkripsiFormatter.cm_to_twips(SkripsiFormatter.FIRST_LINE_INDENT)
-        ind.set(qn('w:firstLine'), str(indent_twips))
+        if p_config and (p_config.get("indent_first_line") or p_config.get("indent_left")):
+            # Use dynamic indent
+            if p_config.get("indent_first_line"):
+                ind.set(qn('w:firstLine'), str(p_config["indent_first_line"]))
+            if p_config.get("indent_left"):
+                ind.set(qn('w:left'), str(p_config["indent_left"]))
+            if p_config.get("indent_right"):
+                ind.set(qn('w:right'), str(p_config["indent_right"]))
+        else:
+            # Default 1.25 cm
+            indent_twips = SkripsiFormatter.cm_to_twips(SkripsiFormatter.FIRST_LINE_INDENT)
+            ind.set(qn('w:firstLine'), str(indent_twips))
         
         # Set alignment to justify
         jc = pPr.find(qn('w:jc'))
@@ -125,65 +142,116 @@ class SkripsiFormatter:
     @staticmethod
     def create_multilevel_numbering_definition(numbering_element, num_id):
         """
-        Create a multilevel numbering definition:
-        Level 1: I, II, III, ... (Roman uppercase)
-        Level 2: A, B, C, ... (Letters)
-        Level 3: 1, 2, 3, ... (Numbers)
+        Create a multilevel numbering definition (AbstractNum):
+        Level 1 (0): BAB I, BAB II (Roman) -> Heading 1
+        Level 2 (1): 1.1, 1.2 (Arabic, inherits Level 1 as Arabic) -> Heading 2
+        Level 3 (2): 1.1.1, 1.1.2 (Arabic) -> Heading 3
         """
-        # Create abstractNum
         abstractNum = OxmlElement('w:abstractNum')
         abstractNum.set(qn('w:abstractNumId'), str(num_id))
         
-        # Level 1: Roman numerals (I, II, III)
-        for level in range(3):
-            lvl = OxmlElement('w:lvl')
-            lvl.set(qn('w:ilvl'), str(level))
-            
-            start = OxmlElement('w:start')
-            start.set(qn('w:val'), '1')
-            lvl.append(start)
-            
-            numFmt = OxmlElement('w:numFmt')
-            if level == 0:
-                numFmt.set(qn('w:val'), 'upperRoman')
-            elif level == 1:
-                numFmt.set(qn('w:val'), 'upperLetter')
-            else:
-                numFmt.set(qn('w:val'), 'decimal')
-            lvl.append(numFmt)
-            
-            lvlText = OxmlElement('w:lvlText')
-            if level == 0:
-                lvlText.set(qn('w:val'), 'BAB %1')
-            elif level == 1:
-                lvlText.set(qn('w:val'), '%2.')
-            else:
-                lvlText.set(qn('w:val'), '%3.')
-            lvl.append(lvlText)
-            
-            lvlJc = OxmlElement('w:lvlJc')
-            lvlJc.set(qn('w:val'), 'left')
-            lvl.append(lvlJc)
-            
-            pPr = OxmlElement('w:pPr')
-            ind = OxmlElement('w:ind')
-            if level == 0:
-                ind.set(qn('w:left'), '0')
-                ind.set(qn('w:hanging'), '0')
-            elif level == 1:
-                ind.set(qn('w:left'), str(SkripsiFormatter.cm_to_twips(0.75)))
-                ind.set(qn('w:hanging'), str(SkripsiFormatter.cm_to_twips(0.75)))
-            else:
-                ind.set(qn('w:left'), str(SkripsiFormatter.cm_to_twips(1.5)))
-                ind.set(qn('w:hanging'), str(SkripsiFormatter.cm_to_twips(1.5)))
-            pPr.append(ind)
-            lvl.append(pPr)
-            
-            abstractNum.append(lvl)
+        # Link to styles (Recommended for robustness)
+        multiLevelType = OxmlElement('w:multiLevelType')
+        multiLevelType.set(qn('w:val'), 'multilevel')
+        abstractNum.append(multiLevelType)
+        
+        # --- Level 1: BAB I ---
+        lvl0 = OxmlElement('w:lvl')
+        lvl0.set(qn('w:ilvl'), '0')
+        
+        start0 = OxmlElement('w:start')
+        start0.set(qn('w:val'), '1')
+        lvl0.append(start0)
+        
+        numFmt0 = OxmlElement('w:numFmt')
+        numFmt0.set(qn('w:val'), 'upperRoman')
+        lvl0.append(numFmt0)
+        
+        lvlText0 = OxmlElement('w:lvlText')
+        lvlText0.set(qn('w:val'), 'BAB %1')
+        lvl0.append(lvlText0)
+        
+        lvlJc0 = OxmlElement('w:lvlJc')
+        lvlJc0.set(qn('w:val'), 'center') # BAB usually centered
+        lvl0.append(lvlJc0)
+        
+        pPr0 = OxmlElement('w:pPr')
+        ind0 = OxmlElement('w:ind')
+        ind0.set(qn('w:left'), '0')
+        ind0.set(qn('w:hanging'), '0')
+        pPr0.append(ind0)
+        lvl0.append(pPr0)
+        
+        abstractNum.append(lvl0)
+        
+        # --- Level 2: 1.1 (Converts I to 1) ---
+        lvl1 = OxmlElement('w:lvl')
+        lvl1.set(qn('w:ilvl'), '1')
+        
+        start1 = OxmlElement('w:start')
+        start1.set(qn('w:val'), '1')
+        lvl1.append(start1)
+        
+        numFmt1 = OxmlElement('w:numFmt')
+        numFmt1.set(qn('w:val'), 'decimal')
+        lvl1.append(numFmt1)
+        
+        # IsLgl: Forces previous level references (BAB I) to be Arabic (1)
+        isLgl1 = OxmlElement('w:isLgl')
+        lvl1.append(isLgl1)
+        
+        lvlText1 = OxmlElement('w:lvlText')
+        lvlText1.set(qn('w:val'), '%1.%2')
+        lvl1.append(lvlText1)
+        
+        lvlJc1 = OxmlElement('w:lvlJc')
+        lvlJc1.set(qn('w:val'), 'left')
+        lvl1.append(lvlJc1)
+        
+        pPr1 = OxmlElement('w:pPr')
+        ind1 = OxmlElement('w:ind')
+        ind1.set(qn('w:left'), str(SkripsiFormatter.cm_to_twips(1.25))) # Indent text
+        ind1.set(qn('w:hanging'), str(SkripsiFormatter.cm_to_twips(1.25))) # Number sticks out
+        pPr1.append(ind1)
+        lvl1.append(pPr1)
+        
+        abstractNum.append(lvl1)
+        
+        # --- Level 3: 1.1.1 ---
+        lvl2 = OxmlElement('w:lvl')
+        lvl2.set(qn('w:ilvl'), '2')
+        
+        start2 = OxmlElement('w:start')
+        start2.set(qn('w:val'), '1')
+        lvl2.append(start2)
+        
+        numFmt2 = OxmlElement('w:numFmt')
+        numFmt2.set(qn('w:val'), 'decimal')
+        lvl2.append(numFmt2)
+        
+        isLgl2 = OxmlElement('w:isLgl')
+        lvl2.append(isLgl2)
+        
+        lvlText2 = OxmlElement('w:lvlText')
+        lvlText2.set(qn('w:val'), '%1.%2.%3')
+        lvl2.append(lvlText2)
+        
+        lvlJc2 = OxmlElement('w:lvlJc')
+        lvlJc2.set(qn('w:val'), 'left')
+        lvl2.append(lvlJc2)
+        
+        pPr2 = OxmlElement('w:pPr')
+        ind2 = OxmlElement('w:ind')
+        ind2.set(qn('w:left'), str(SkripsiFormatter.cm_to_twips(1.5))) 
+        ind2.set(qn('w:hanging'), str(SkripsiFormatter.cm_to_twips(1.5)))
+        pPr2.append(ind2)
+        lvl2.append(pPr2)
+        
+        abstractNum.append(lvl2)
         
         numbering_element.append(abstractNum)
         
-        # Create num reference
+        # Create num instance
         num = OxmlElement('w:num')
         num.set(qn('w:numId'), str(num_id + 1))
         absNumId = OxmlElement('w:abstractNumId')
@@ -227,19 +295,24 @@ class SkripsiFormatter:
             section.right_margin = Cm(SkripsiFormatter.MARGIN_RIGHT)
     
     @staticmethod
-    def enforce_skripsi_format(docx_path):
+    def enforce_skripsi_format(docx_path, style_config=None):
         """
         Main function: Enforce all skripsi formatting standards.
         
-        1. Set page margins
-        2. Fix paragraph spacing & indent
+        1. Set page margins (dynamic if style_config provided)
+        2. Fix paragraph spacing & indent (dynamic if style_config provided)
         3. Apply heading styles with Word-native numbering
         4. Apply numbering to BAB headings
         """
         doc = Document(docx_path)
         
         # Step 1: Set page margins
-        SkripsiFormatter.set_page_margins(doc)
+        if style_config and style_config.get("margins"):
+            # Use dynamic margins from template
+            SkripsiFormatter.set_dynamic_margins(doc, style_config["margins"])
+        else:
+            # Use hardcoded defaults
+            SkripsiFormatter.set_page_margins(doc)
         
         # Step 2: Create numbering structure
         numbering_element = doc.element.find(qn('w:numbering'))
@@ -259,6 +332,9 @@ class SkripsiFormatter:
         # Step 3: Process paragraphs
         heading_count_by_level = {1: 0, 2: 0, 3: 0}
         
+        # Prepare paragraph config
+        p_config = style_config.get("paragraph") if style_config else None
+        
         for paragraph in doc.paragraphs:
             level = SkripsiFormatter.detect_heading_level(paragraph)
             
@@ -275,7 +351,32 @@ class SkripsiFormatter:
                     pPr.append(outlineLvl)
                 outlineLvl.set(qn('w:val'), str(level - 1))
                 
+                # Apply strictly defined spacing (Dosen Mode)
+                spacing = pPr.find(qn('w:spacing'))
+                if spacing is None:
+                    spacing = OxmlElement('w:spacing')
+                    pPr.append(spacing)
+                
+                if level == 1:
+                    spacing.set(qn('w:before'), '480') # 24pt
+                    spacing.set(qn('w:after'), '240')  # 12pt
+                    
+                    # Page Break Before (Strict requirement: BAB starts new page)
+                    pageBreakBefore = pPr.find(qn('w:pageBreakBefore'))
+                    if pageBreakBefore is None:
+                        pageBreakBefore = OxmlElement('w:pageBreakBefore')
+                        pPr.append(pageBreakBefore)
+                    pageBreakBefore.set(qn('w:val'), 'on')
+                    
+                elif level == 2:
+                    spacing.set(qn('w:before'), '240') # 12pt
+                    spacing.set(qn('w:after'), '120')  # 6pt
+                elif level == 3:
+                    spacing.set(qn('w:before'), '120') # 6pt
+                    spacing.set(qn('w:after'), '120')  # 6pt
+                
                 # Apply numbering to BAB (Level 1)
+                # Note: Multilevel definition handles the numbering format
                 if level == 1:
                     SkripsiFormatter.apply_heading_numbering(paragraph, level, num_id, 0)
                     heading_count_by_level[1] += 1
@@ -287,14 +388,13 @@ class SkripsiFormatter:
                     heading_count_by_level[3] += 1
                 
                 # No indent for headings
-                pPr = paragraph._element.get_or_add_pPr()
                 ind = pPr.find(qn('w:ind'))
                 if ind is not None:
                     ind.set(qn('w:firstLine'), '0')
             else:
                 # Format normal paragraphs
                 if paragraph.text.strip():  # Skip empty paragraphs
-                    SkripsiFormatter.format_paragraph(paragraph)
+                    SkripsiFormatter.format_paragraph(paragraph, p_config)
         
         doc.save(docx_path)
         
@@ -306,15 +406,31 @@ class SkripsiFormatter:
             "numbering_applied": num_id > 0
         }
 
+    @staticmethod
+    def set_dynamic_margins(doc, margins):
+        """Set page margins from template config (values in twips)."""
+        from docx.shared import Twips
+        sections = doc.sections
+        for section in sections:
+            if margins.get("top"):
+                section.top_margin = Twips(int(margins["top"]))
+            if margins.get("bottom"):
+                section.bottom_margin = Twips(int(margins["bottom"]))
+            if margins.get("left"):
+                section.left_margin = Twips(int(margins["left"]))
+            if margins.get("right"):
+                section.right_margin = Twips(int(margins["right"]))
 
-def enforce_skripsi_format(docx_path):
+
+def enforce_skripsi_format(docx_path, style_config=None):
     """
     Public function to enforce skripsi formatting.
     
     Args:
         docx_path (str): Path to DOCX file
+        style_config (dict, optional): Configuration from template
         
     Returns:
         dict: Formatting results
     """
-    return SkripsiFormatter.enforce_skripsi_format(docx_path)
+    return SkripsiFormatter.enforce_skripsi_format(docx_path, style_config)
