@@ -1,4 +1,4 @@
-import { Check, Eye, Download, FileText } from 'lucide-react'
+import { Check, Eye, Download, FileText, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
 
@@ -8,6 +8,7 @@ interface SuccessViewProps {
   onFormatAnother: () => void
   onPreview?: () => void
   previewContent?: string | null
+  onEdit?: () => void
 }
 
 export function SuccessView({
@@ -16,6 +17,7 @@ export function SuccessView({
   onFormatAnother,
   onPreview,
   previewContent,
+  onEdit,
 }: SuccessViewProps) {
   const [showPreview, setShowPreview] = useState(false)
 
@@ -59,6 +61,12 @@ export function SuccessView({
           <Button variant="outline" onClick={handlePreview} className="flex items-center gap-2">
             <Eye className="w-4 h-4" />
             Preview Document
+          </Button>
+        )}
+        {onEdit && (
+          <Button variant="outline" onClick={onEdit} className="flex items-center gap-2">
+            <Edit className="w-4 h-4" />
+            Edit Document
           </Button>
         )}
         <Button variant="outline" onClick={onFormatAnother}>

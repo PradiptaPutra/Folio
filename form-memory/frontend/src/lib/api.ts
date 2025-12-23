@@ -361,7 +361,7 @@ export async function generateFromTemplate(
   frontmatterData?: FrontmatterData,
   includeFrontmatter: boolean = false,
   useAIAnalysis: boolean = true
-): Promise<{ blob: Blob; filename: string }> {
+): Promise<{ filename: string; file_size: number }> {
   try {
     const textFile = new File([rawText], 'content.txt', { type: 'text/plain' })
 
@@ -384,38 +384,38 @@ export async function generateFromTemplate(
       formData.append('kata_kunci', frontmatterData.kata_kunci || '')
     }
 
-    const response = await apiClient.post(
-      '/generate',
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        responseType: 'blob',
-      }
-    )
+    const response = await apiClient.post('/generate', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
 
-    const contentDisposition = response.headers['content-disposition']
-    let filename = 'formatted.docx'
-
-    if (contentDisposition) {
-      const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/)
-      if (filenameMatch) {
-        filename = filenameMatch[1]
-      }
-    }
-
-    return {
-      blob: response.data as Blob,
-      filename,
-    }
+    return response.data
   } catch (error) {
     const axiosError = error as AxiosError
-    console.error('Generate from template error:', axiosError)
     throw {
       status: axiosError.response?.status || 500,
-      message: 'Failed to generate formatted document',
-      detail: axiosError.response?.statusText || axiosError.message,
+      message: 'Failed to generate document',
+      detail: axiosError.message,
+    } as ApiError
+  }
+}
+
+/**
+ * Download a generated document
+ */
+export async function downloadGeneratedDocument(filename: string): Promise<Blob> {
+  try {
+    const response = await apiClient.get(`/download/${filename}`, {
+      responseType: 'blob',
+    })
+    return response.data
+  } catch (error) {
+    const axiosError = error as AxiosError
+    throw {
+      status: axiosError.response?.status || 500,
+      message: 'Failed to download document',
+      detail: axiosError.message,
     } as ApiError
   }
 }
@@ -674,14 +674,31 @@ export async function getAIAnalysisStatus(): Promise<{
 }
 
 /**
- * Generate HTML preview of a document
+ * Generate HTML preview of a generated document
  */
-export async function previewDocument(docxFile: File): Promise<{ html_content: string }> {
+export async function previewGeneratedDocument(filename: string): Promise<{ html_content: string }> {
+  try {
+    const response = await apiClient.get(`/preview-generated/${filename}`)
+    return response.data
+  } catch (error) {
+    const axiosError = error as AxiosError
+    throw {
+      status: axiosError.response?.status || 500,
+      message: 'Failed to generate document preview',
+      detail: axiosError.message,
+    } as ApiError
+  }
+}
+
+/**
+ * Save edited HTML content
+ */
+export async function saveEditedContent(content: string): Promise<{ content_id: string }> {
   try {
     const formData = new FormData()
-    formData.append('file', docxFile)
+    formData.append('content', content)
 
-    const response = await apiClient.post('/preview-document', formData, {
+    const response = await apiClient.post('/save-edited-content', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -691,7 +708,7 @@ export async function previewDocument(docxFile: File): Promise<{ html_content: s
     const axiosError = error as AxiosError
     throw {
       status: axiosError.response?.status || 500,
-      message: 'Failed to generate document preview',
+      message: 'Failed to save edited content',
       detail: axiosError.message,
     } as ApiError
   }

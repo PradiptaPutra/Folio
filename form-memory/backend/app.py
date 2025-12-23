@@ -413,14 +413,15 @@ async def generate_document(
             # Clean up temporary content file
             if content_path is not None and content_path.exists():
                 content_path.unlink()
-            
-            # Return as file download
-            from fastapi.responses import FileResponse
-            return FileResponse(
-                output_path,
-                filename=output_filename,
-                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+
+            # Return JSON response with filename for frontend to use
+            return {
+                "status": "success",
+                "message": "Thesis document generated successfully",
+                "filename": output_filename,
+                "file_path": str(output_path),
+                "file_size": output_path.stat().st_size if output_path.exists() else 0
+            }
         
         else:
             raise HTTPException(
@@ -671,14 +672,15 @@ async def format_thesis_endpoint(
         
         if result["status"] != "success":
             raise Exception(result.get("message", "Failed to create thesis"))
-        
-        # Return file for download
-        from fastapi.responses import FileResponse
-        return FileResponse(
-            output_path,
-            filename=output_filename,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
+
+        # Return JSON response with filename
+        return {
+            "status": "success",
+            "message": "Thesis document generated successfully",
+            "filename": output_filename,
+            "file_path": str(output_path),
+            "file_size": output_path.stat().st_size if output_path.exists() else 0
+        }
         
     except Exception as e:
         import traceback
@@ -715,41 +717,111 @@ async def universal_formatter_info():
     }
 
 
-@app.post("/preview-document")
-async def preview_document(file: UploadFile = File(...)):
+@app.get("/download/{filename}")
+async def download_generated_document(filename: str):
     """
-    Convert DOCX file to HTML for preview in browser.
+    Download a generated document by filename.
     """
     try:
-        # Save uploaded file temporarily
+        # Find the generated file
+        output_dir = BASE_DIR / "storage" / "outputs"
+        docx_file = output_dir / filename
+
+        if not docx_file.exists():
+            raise HTTPException(status_code=404, detail="Generated document not found")
+
+        # Return file for download
+        from fastapi.responses import FileResponse
+        return FileResponse(
+            docx_file,
+            filename=filename,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+    except Exception as e:
+        import traceback
+        error_msg = f"Document download failed: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        raise HTTPException(status_code=500, detail=f"Download failed: {str(e)}")
+
+
+@app.post("/save-edited-content")
+async def save_edited_content(content: str = Form(...)):
+    """
+    Save edited HTML content for later conversion to DOCX.
+    """
+    try:
+        # Save the HTML content temporarily
+        import time
+        timestamp = int(time.time())
         temp_dir = BASE_DIR / "storage" / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
-        temp_file = temp_dir / f"preview_{file.filename}"
-        with open(temp_file, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        html_file = temp_dir / f"edited_content_{timestamp}.html"
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(content)
 
-        # Convert DOCX to HTML using pandoc
-        import subprocess
-        html_output = temp_file.with_suffix('.html')
+        return {
+            "status": "success",
+            "message": "Content saved successfully",
+            "content_id": f"edited_content_{timestamp}"
+        }
 
-        # Run pandoc to convert DOCX to HTML
-        result = subprocess.run(
-            ['pandoc', str(temp_file), '-o', str(html_output), '--self-contained'],
-            capture_output=True,
-            text=True
-        )
+    except Exception as e:
+        import traceback
+        error_msg = f"Save failed: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        raise HTTPException(status_code=500, detail=f"Save failed: {str(e)}")
 
-        if result.returncode != 0:
-            raise HTTPException(status_code=500, detail=f"Pandoc conversion failed: {result.stderr}")
 
-        # Read the HTML content
-        with open(html_output, 'r', encoding='utf-8') as f:
-            html_content = f.read()
+@app.get("/preview-generated/{filename}")
+async def preview_generated_document(filename: str):
+    """
+    Generate HTML preview of a generated document.
+    """
+    try:
+        # Find the generated file
+        output_dir = BASE_DIR / "storage" / "outputs"
+        docx_file = output_dir / filename
 
-        # Clean up temp files
-        temp_file.unlink(missing_ok=True)
-        html_output.unlink(missing_ok=True)
+        if not docx_file.exists():
+            raise HTTPException(status_code=404, detail="Generated document not found")
+
+        # Extract text content from DOCX for preview
+        from docx import Document
+
+        doc = Document(str(docx_file))
+        html_content = "<!DOCTYPE html>\n<html>\n<head>\n"
+        html_content += "<meta charset='utf-8'>\n"
+        html_content += "<title>Document Preview</title>\n"
+        html_content += "<style>\n"
+        html_content += "body { font-family: 'Times New Roman', serif; margin: 40px; line-height: 1.6; }\n"
+        html_content += ".heading1 { font-size: 16pt; font-weight: bold; margin: 20px 0 10px 0; }\n"
+        html_content += ".heading2 { font-size: 14pt; font-weight: bold; margin: 15px 0 8px 0; }\n"
+        html_content += ".normal { margin: 8px 0; text-align: justify; text-indent: 1cm; }\n"
+        html_content += ".center { text-align: center; }\n"
+        html_content += ".page-break { page-break-before: always; }\n"
+        html_content += "</style>\n"
+        html_content += "</head>\n<body>\n"
+
+        for para in doc.paragraphs:
+            if para.text.strip():
+                # Determine style class based on paragraph style
+                style_class = "normal"
+                if para.style:
+                    style_name = para.style.name.lower()
+                    if "heading 1" in style_name:
+                        style_class = "heading1"
+                    elif "heading 2" in style_name:
+                        style_class = "heading2"
+                    elif "center" in style_name or para.alignment == 1:  # WD_ALIGN_PARAGRAPH.CENTER = 1
+                        style_class = "center"
+
+                # Escape HTML and add paragraph
+                text = para.text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                html_content += f"<p class='{style_class}'>{text}</p>\n"
+
+        html_content += "</body>\n</html>"
 
         return {
             "status": "success",

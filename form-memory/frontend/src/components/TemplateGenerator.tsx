@@ -4,13 +4,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StepIndicator } from '@/components/StepIndicator'
 import { ProcessingView } from '@/components/ProcessingView'
 import { SuccessView } from '@/components/SuccessView'
-import { generateFromTemplate, downloadFile, validateTemplate, type ApiError } from '@/lib/api'
+
+import { generateFromTemplate, downloadFile, validateTemplate, previewGeneratedDocument, downloadGeneratedDocument, type ApiError } from '@/lib/api'
 import { Upload, Eye, FileText } from 'lucide-react'
 
 export function TemplateGenerator() {
   // Step Management
-  const [currentStep, setCurrentStep] = useState<0 | 1 | 2>(0)
-  const steps = ['TEMPLATE', 'CONTENT', 'DETAILS']
+  const [currentStep, setCurrentStep] = useState<0 | 1 | 2 | 3>(0)
+  const steps = ['TEMPLATE', 'CONTENT', 'DETAILS', 'GENERATE']
 
   // File State
   const [templateFile, setTemplateFile] = useState<File | null>(null)
@@ -44,7 +45,8 @@ export function TemplateGenerator() {
   const [includeFrontmatter, setIncludeFrontmatter] = useState(true)
 
   // Preview State
-  const [previewContent, setPreviewContent] = useState<string | null>(null)
+  const [previewContent, setPreviewContent] = useState<string>('')
+  const [showEditor, setShowEditor] = useState(false)
 
   // Event Handlers
   const handleInputChange = (field: string, value: string) => {
@@ -111,14 +113,14 @@ export function TemplateGenerator() {
       setError('Please provide content')
       return
     }
-    if (currentStep < 2) {
-      setCurrentStep((currentStep + 1) as 0 | 1 | 2)
+    if (currentStep < 3) {
+      setCurrentStep((currentStep + 1) as 0 | 1 | 2 | 3)
     }
   }
 
   const handlePreviousStep = () => {
     if (currentStep > 0) {
-      setCurrentStep((currentStep - 1) as 0 | 1 | 2)
+      setCurrentStep((currentStep - 1) as 0 | 1 | 2 | 3)
     }
   }
 
@@ -159,7 +161,7 @@ export function TemplateGenerator() {
       setProcessingSteps(s => [s[0], s[1], s[2], { ...s[3], completed: true, processing: false }, { ...s[4], processing: true }])
 
       // Generate actual document
-      const { blob, filename } = await generateFromTemplate(
+      const result = await generateFromTemplate(
         templateFile,
         rawText,
         {
@@ -173,17 +175,22 @@ export function TemplateGenerator() {
       await new Promise(resolve => setTimeout(resolve, 500))
       setProcessingSteps(s => [...s.slice(0, 4), { ...s[4], completed: true, processing: false }])
 
-      // Download
-      downloadFile(blob, filename)
+      // Store results for later use
+      setResults(result)
+
+      // Download automatically
+      try {
+        const blob = await downloadGeneratedDocument(result.filename)
+        downloadFile(blob, result.filename)
+      } catch (downloadError) {
+        console.error('Auto-download failed:', downloadError)
+        // Continue to success screen even if download fails
+      }
 
       // Success
       await new Promise(resolve => setTimeout(resolve, 1000))
+      setProcessing(false)
       setSuccess(true)
-      setResults({
-        message: 'Your complete thesis document is ready!',
-        filename: filename,
-        size: blob.size
-      })
 
     } catch (err) {
       const apiError = err as ApiError
@@ -222,15 +229,20 @@ export function TemplateGenerator() {
       <div className="max-w-4xl mx-auto p-6">
         <SuccessView
           fileName={results?.filename || 'thesis.docx'}
-          onDownload={() => {
-            alert('File already downloaded to your Downloads folder')
+          onDownload={async () => {
+            try {
+              const blob = await downloadGeneratedDocument(results?.filename || 'thesis.docx')
+              downloadFile(blob, results?.filename || 'thesis.docx')
+            } catch (error) {
+              console.error('Download failed:', error)
+              alert('Download failed. Please try again.')
+            }
           }}
           onFormatAnother={handleReset}
           onPreview={async () => {
             try {
-              // In a real implementation, we would need to pass the generated file
-              // For now, show a placeholder
-              setPreviewContent('<div style="padding: 20px; text-align: center;"><h1>Document Preview</h1><p>Your thesis document would be displayed here in HTML format.</p></div>')
+              const result = await previewGeneratedDocument(results?.filename || 'thesis.docx')
+              setPreviewContent(result.html_content)
             } catch (error) {
               console.error('Preview failed:', error)
               alert('Preview not available')
@@ -424,6 +436,22 @@ BAB II: LITERATURE REVIEW
       )}
 
       {/* Step 3: Details Form */}
+      {/* Document Editor (shown after generation) */}
+      {showEditor && (
+        <DocumentEditor
+          initialContent={previewContent}
+          onSave={(content) => {
+            setPreviewContent(content)
+            setShowEditor(false)
+          }}
+          onPreview={() => {
+            // Preview is handled within the component
+          }}
+          onBack={() => setShowEditor(false)}
+          title="Edit Generated Document"
+        />
+      )}
+
       {currentStep === 2 && (
         <Card>
           <CardHeader>
