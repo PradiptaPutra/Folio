@@ -44,6 +44,26 @@ class CompleteThesisBuilder:
         
         # Semantic validation
         self.semantic_validation = self.ai_extractor.get_semantic_validation() if use_ai else None
+
+    def _copy_styles_from_template(self, target_doc: Document, template_doc: Document) -> None:
+        """Copy styles from template document to target document."""
+        try:
+            # Copy paragraph styles
+            for style in template_doc.styles:
+                if style.name not in target_doc.styles:
+                    try:
+                        # Create a copy of the style in the target document
+                        new_style = target_doc.styles.add_style(style.name, style.type)
+                        if hasattr(style, 'font') and style.font:
+                            new_style.font.name = style.font.name
+                            new_style.font.size = style.font.size
+                            new_style.font.bold = style.font.bold
+                            new_style.font.italic = style.font.italic
+                    except Exception:
+                        # Skip styles that can't be copied
+                        pass
+        except Exception as e:
+            print(f"[WARNING] Failed to copy styles from template: {e}")
     
     def build(self, user_data: Dict[str, Any] = None) -> Path:
         """Build the complete thesis document.
@@ -73,9 +93,13 @@ class CompleteThesisBuilder:
         """
         user_data = user_data or {}
         
-        # Load template document
+        # Load template document and extract styles, then create new document
         try:
-            doc = Document(str(self.template_path))
+            template_doc = Document(str(self.template_path))
+            # Create new document (don't keep template content)
+            doc = Document()
+            # Copy styles from template to new document
+            self._copy_styles_from_template(doc, template_doc)
         except Exception as e:
             print(f"[WARNING] Failed to load template, creating new document: {e}")
             doc = Document()
