@@ -165,13 +165,17 @@ class ParagraphStyleEnforcer:
     def ensure_isiparagraf_style_exists(doc: Document) -> None:
         """Create IsiParagraf style if it doesn't exist."""
         try:
-            doc.styles['IsiParagraf']
-        except KeyError:
+            # Try to get the style by name (newer approach)
+            style = doc.styles['IsiParagraf']
+        except (KeyError, IndexError):
             # Create IsiParagraf style based on Normal
-            style = doc.styles.add_style('IsiParagraf', WD_STYLE_TYPE.PARAGRAPH)
-            style.base_style = doc.styles['Normal']
-            style.font.name = 'Calibri'
-            style.font.size = Pt(12)
+            try:
+                style = doc.styles.add_style('IsiParagraf', WD_STYLE_TYPE.PARAGRAPH)
+                style.base_style = doc.styles['Normal']
+                style.font.name = 'Calibri'
+                style.font.size = Pt(12)
+            except Exception as e:
+                print(f"Warning: Could not create IsiParagraf style: {e}")
     
     @staticmethod
     def apply_isiparagraf(paragraph) -> None:

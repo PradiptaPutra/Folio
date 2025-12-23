@@ -157,14 +157,15 @@ async def generate_document(
                     'kata_kunci': kata_kunci or 'keyword1, keyword2'
                 }
 
-            # Generate document
-            markdown_to_docx(md_path, ref_path, output_path, style_config, frontmatter_data)
+            # Generate document (always .docx internally)
+            docx_output = out_dir / "final.docx"
+            markdown_to_docx(md_path, ref_path, docx_output, style_config, frontmatter_data)
             
             # Return as file download
             from fastapi.responses import FileResponse
             return FileResponse(
-                output_path,
-                filename=f"formatted.{fmt}",
+                docx_output,
+                filename="formatted.docx",
                 media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
         
@@ -201,7 +202,7 @@ async def generate_document(
             output_file = result.get('file', file.filename)
             output_path = UPLOAD_DIR / output_file
             
-            # Return as file download
+            # Return as file download (.docx format)
             from fastapi.responses import FileResponse
             return FileResponse(
                 output_path,
