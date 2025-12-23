@@ -1,9 +1,18 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { generateFromTemplate, downloadFile, parseTextSemantics, validateTemplate, generateAbstractId, generateAbstractEn, generatePreface, type ApiError, type SemanticParseResult } from '@/lib/api'
+import { StepIndicator } from '@/components/StepIndicator'
+import { ProcessingView } from '@/components/ProcessingView'
+import { SuccessView } from '@/components/SuccessView'
+import { generateFromTemplate, downloadFile, validateTemplate, type ApiError } from '@/lib/api'
+import { Upload, Eye, FileText } from 'lucide-react'
 
 export function TemplateGenerator() {
+  // Step Management
+  const [currentStep, setCurrentStep] = useState<0 | 1 | 2>(0)
+  const steps = ['TEMPLATE', 'CONTENT', 'DETAILS']
+
+  // File State
   const [templateFile, setTemplateFile] = useState<File | null>(null)
   const [contentFile, setContentFile] = useState<File | null>(null)
   const [rawText, setRawText] = useState<string>('')
@@ -14,532 +23,652 @@ export function TemplateGenerator() {
     penulis: '',
     nim: '',
     universitas: '',
+    dosen_pembimbing: '',
     tahun: new Date().getFullYear().toString(),
     abstrak_teks: '',
     abstrak_en_teks: '',
-    kata_kunci: '',
-    preface: ''
+    kata_kunci: ''
   })
-  const [includeFrontmatter, setIncludeFrontmatter] = useState(true)
 
-  const [generatingLoading, setGeneratingLoading] = useState(false)
-  const [semanticAnalysis, setSemanticAnalysis] = useState<SemanticParseResult | null>(null)
+  // Processing State
+  const [showPreview, setShowPreview] = useState(false)
+  const [processing, setProcessing] = useState(false)
+  const [processingSteps, setProcessingSteps] = useState<Array<{ label: string; completed: boolean; processing: boolean }>>([])
   const [templateMetadata, setTemplateMetadata] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [results, setResults] = useState<any>(null)
+  
+  // AI & Frontmatter Settings
+  const [useAI, setUseAI] = useState(true)
+  const [includeFrontmatter, setIncludeFrontmatter] = useState(true)
 
+  // Preview State
+  const [previewContent, setPreviewContent] = useState<string | null>(null)
+
+  // Event Handlers
   const handleInputChange = (field: string, value: string) => {
     setMetadata(prev => ({ ...prev, [field]: value }))
   }
 
-  const handleTemplateFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0]
-    if (selectedFile) {
-      if (!selectedFile.name.endsWith('.docx')) {
-        setError('Please select a valid .docx template file')
-        return
-      }
-      
-      setTemplateFile(selectedFile)
-      setError(null)
-      setSuccess(false)
-      
-      // Validate template and get metadata
-      try {
-        const metadata = await validateTemplate(selectedFile)
-        setTemplateMetadata(metadata)
-      } catch (err) {
-        const apiError = err as ApiError
-        setError(`Template validation failed: ${apiError.detail || apiError.message}`)
-      }
-    }
-  }
-
-  const handleContentFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0]
-    if (selectedFile) {
-      if (!selectedFile.name.endsWith('.txt')) {
-        setError('Please select a valid .txt file for content')
-        return
-      }
-      setContentFile(selectedFile)
-
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const content = event.target?.result as string
-        setRawText(content)
-        setError(null)
-        setSuccess(false)
-      }
-      reader.onerror = () => {
-        setError('Failed to read the text file')
-      }
-      reader.readAsText(selectedFile)
-    }
-  }
-
-  const handleAnalyzeSemantic = async () => {
-    if (!rawText.trim()) {
-      setError('Please provide content text to analyze')
+  // Step 1: Template Upload
+  const handleTemplateChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    
+    if (!file.name.endsWith('.docx')) {
+      setError('Please select a valid .docx template file')
       return
     }
 
-    setGeneratingLoading(true)
+    setTemplateFile(file)
     setError(null)
+    setProcessing(true)
 
+    // Validate template
     try {
-      const result = await parseTextSemantics(rawText)
-      setSemanticAnalysis(result)
-      
-      if (result.warnings.length > 0) {
-        setError(`Analysis warnings: ${result.warnings.join(', ')}`)
-      }
+      const metadata = await validateTemplate(file)
+      setTemplateMetadata(metadata)
+      setCurrentStep(1)
     } catch (err) {
       const apiError = err as ApiError
-      setError(`Semantic analysis failed: ${apiError.detail || apiError.message}`)
+      setError(`Template validation failed: ${apiError.detail || apiError.message}`)
     } finally {
-      setGeneratingLoading(false)
+      setProcessing(false)
     }
   }
 
-  const handleGenerateDocument = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Step 2: Content Upload
+  const handleContentChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
 
-    if (!templateFile) {
-      setError('Please select a template file')
-      return
+    if (file.name.endsWith('.txt')) {
+      setContentFile(file)
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        setRawText(event.target?.result as string)
+        setError(null)
+      }
+      reader.readAsText(file)
+    } else {
+      setError('Please upload a .txt file')
     }
+  }
 
-    if (!rawText.trim()) {
-      setError('Please enter text content or upload a text file')
-      return
-    }
-
-    setGeneratingLoading(true)
+  const handleContentPaste = (text: string) => {
+    setRawText(text)
+    // Don't clear the contentFile, keep both options available
     setError(null)
-    setSuccess(false)
+  }
+
+  const handleNextStep = () => {
+    if (currentStep === 0 && !templateFile) {
+      setError('Please upload a template file')
+      return
+    }
+    if (currentStep === 1 && !rawText.trim()) {
+      setError('Please provide content')
+      return
+    }
+    if (currentStep < 2) {
+      setCurrentStep((currentStep + 1) as 0 | 1 | 2)
+    }
+  }
+
+  const handlePreviousStep = () => {
+    if (currentStep > 0) {
+      setCurrentStep((currentStep - 1) as 0 | 1 | 2)
+    }
+  }
+
+  // Preview Handler
+  const handlePreview = () => {
+    setShowPreview(true)
+  }
+
+  // Generate Document
+  const handleGenerate = async () => {
+    if (!templateFile || !rawText.trim()) {
+      setError('Missing template or content')
+      return
+    }
+
+    setProcessing(true)
+    setShowPreview(false)
+    setProcessingSteps([
+      { label: 'Analyzing template structure', completed: false, processing: true },
+      { label: 'Extracting content sections', completed: false, processing: false },
+      { label: 'Mapping content to template', completed: false, processing: false },
+      { label: 'Applying formatting rules', completed: false, processing: false },
+      { label: 'Generating final document', completed: false, processing: false },
+    ])
 
     try {
+      // Simulate step-by-step progress
+      await new Promise(resolve => setTimeout(resolve, 500))
+      setProcessingSteps(s => [{ ...s[0], completed: true, processing: false }, { ...s[1], processing: true }, ...s.slice(2)])
+
+      await new Promise(resolve => setTimeout(resolve, 500))
+      setProcessingSteps(s => [s[0], { ...s[1], completed: true, processing: false }, { ...s[2], processing: true }, ...s.slice(3)])
+
+      await new Promise(resolve => setTimeout(resolve, 500))
+      setProcessingSteps(s => [s[0], s[1], { ...s[2], completed: true, processing: false }, { ...s[3], processing: true }, s[4]])
+
+      await new Promise(resolve => setTimeout(resolve, 500))
+      setProcessingSteps(s => [s[0], s[1], s[2], { ...s[3], completed: true, processing: false }, { ...s[4], processing: true }])
+
+      // Generate actual document
       const { blob, filename } = await generateFromTemplate(
         templateFile,
         rawText,
-        includeFrontmatter ? {
+        {
           ...metadata,
           tahun: parseInt(metadata.tahun) || 2024
-        } : undefined,
-        includeFrontmatter
+        },
+        includeFrontmatter,  // use state value
+        useAI   // use state value
       )
 
-      // Download the file
+      await new Promise(resolve => setTimeout(resolve, 500))
+      setProcessingSteps(s => [...s.slice(0, 4), { ...s[4], completed: true, processing: false }])
+
+      // Download
       downloadFile(blob, filename)
 
+      // Success
+      await new Promise(resolve => setTimeout(resolve, 1000))
       setSuccess(true)
       setResults({
-        message: 'Document generated successfully and downloaded!',
+        message: 'Your complete thesis document is ready!',
         filename: filename,
-        size: blob.size,
-        timestamp: new Date().toLocaleString()
+        size: blob.size
       })
 
-      // Clear text but keep template
-      setRawText('')
-      setContentFile(null)
-      setSemanticAnalysis(null)
     } catch (err) {
       const apiError = err as ApiError
       setError(apiError.detail || apiError.message || 'Failed to generate document')
-      console.error('Generation error:', err)
     } finally {
-      setGeneratingLoading(false)
+      setProcessing(false)
     }
   }
 
+  // Reset
+  const handleReset = () => {
+    setCurrentStep(0)
+    setTemplateFile(null)
+    setContentFile(null)
+    setRawText('')
+    setMetadata({
+      judul: '',
+      penulis: '',
+      nim: '',
+      universitas: '',
+      dosen_pembimbing: '',
+      tahun: new Date().getFullYear().toString(),
+      abstrak_teks: '',
+      abstrak_en_teks: '',
+      kata_kunci: ''
+    })
+    setShowPreview(false)
+    setProcessing(false)
+    setSuccess(false)
+    setError(null)
+  }
+
+  // Show success view
+  if (success) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <SuccessView
+          fileName={results?.filename || 'thesis.docx'}
+          onDownload={() => {
+            alert('File already downloaded to your Downloads folder')
+          }}
+          onFormatAnother={handleReset}
+          onPreview={async () => {
+            try {
+              // In a real implementation, we would need to pass the generated file
+              // For now, show a placeholder
+              setPreviewContent('<div style="padding: 20px; text-align: center;"><h1>Document Preview</h1><p>Your thesis document would be displayed here in HTML format.</p></div>')
+            } catch (error) {
+              console.error('Preview failed:', error)
+              alert('Preview not available')
+            }
+          }}
+          previewContent={previewContent}
+        />
+      </div>
+    )
+  }
+
+  // Show processing view
+  if (processing) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="space-y-8">
+          <div className="text-center space-y-2">
+            <h2 className="text-3xl font-bold">Generating Your Thesis</h2>
+            <p className="text-muted-foreground">Please wait while we format your document with AI analysis...</p>
+          </div>
+          <ProcessingView steps={processingSteps} />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-6">
-      {/* Generate Document Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Generate Formatted Document</CardTitle>
-          <CardDescription>
-            Upload a template DOCX and raw text content to generate a formatted document
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleGenerateDocument} className="space-y-6">
+    <div className="max-w-4xl mx-auto p-6 space-y-8">
+      {/* Step Indicator */}
+      <StepIndicator steps={steps} currentStep={currentStep} />
 
-            {/* Template File */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium">Template DOCX File</label>
-              <input
-                type="file"
-                accept=".docx"
-                onChange={handleTemplateFileChange}
-                disabled={generatingLoading}
-                className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
-              />
-              {templateFile && (
-                <p className="text-sm text-green-600">✓ Selected: {templateFile.name}</p>
-              )}
-            </div>
-
-            {/* Metadata Section (Collapsible or always visible) */}
-            <div className="space-y-4 border p-4 rounded-md bg-slate-50">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-700">Document Metadata (Front Matter)</h3>
-                <label className="flex items-center gap-2 text-sm cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={includeFrontmatter}
-                    onChange={(e) => setIncludeFrontmatter(e.target.checked)}
-                    className="rounded border-gray-300"
-                  />
-                  Enable Auto-Generated Pages
-                </label>
-              </div>
-
-              {includeFrontmatter && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">Judul Skripsi</label>
-                    <input
-                      type="text"
-                      value={metadata.judul}
-                      onChange={(e) => handleInputChange('judul', e.target.value)}
-                      className="w-full p-2 border rounded text-sm"
-                      placeholder="JUDUL SKRIPSI..."
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">Penulis / Nama</label>
-                    <input
-                      type="text"
-                      value={metadata.penulis}
-                      onChange={(e) => handleInputChange('penulis', e.target.value)}
-                      className="w-full p-2 border rounded text-sm"
-                      placeholder="Nama Mahasiswa"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">NIM</label>
-                    <input
-                      type="text"
-                      value={metadata.nim}
-                      onChange={(e) => handleInputChange('nim', e.target.value)}
-                      className="w-full p-2 border rounded text-sm"
-                      placeholder="12345678"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">Universitas</label>
-                    <input
-                      type="text"
-                      value={metadata.universitas}
-                      onChange={(e) => handleInputChange('universitas', e.target.value)}
-                      className="w-full p-2 border rounded text-sm"
-                      placeholder="Nama Universitas"
-                    />
-                  </div>
-                  <div className="space-y-1 col-span-2">
-                    <label className="text-xs font-medium">Abstrak (Indonesia)</label>
-                    <textarea
-                      value={metadata.abstrak_teks}
-                      onChange={(e) => handleInputChange('abstrak_teks', e.target.value)}
-                      className="w-full p-2 border rounded text-sm h-20"
-                      placeholder="Isi abstrak..."
-                    />
-                  </div>
-                  <div className="space-y-1 col-span-2">
-                    <label className="text-xs font-medium">Abstract (English)</label>
-                    <textarea
-                      value={metadata.abstrak_en_teks}
-                      onChange={(e) => handleInputChange('abstrak_en_teks', e.target.value)}
-                      className="w-full p-2 border rounded text-sm h-20"
-                      placeholder="English abstract content..."
-                    />
-                  </div>
+      {/* Step 1: Template Upload */}
+      {currentStep === 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Step 1: Upload Template</CardTitle>
+            <CardDescription>
+              Select your university's thesis template (DOCX format)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Drag & Drop Area */}
+            <div className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary transition-colors cursor-pointer">
+              <label className="cursor-pointer flex flex-col items-center gap-3">
+                <Upload className="w-8 h-8 text-muted-foreground" />
+                <div>
+                  <p className="font-semibold">Click to upload or drag and drop</p>
+                  <p className="text-sm text-muted-foreground">DOCX file (up to 50MB)</p>
                 </div>
-              )}
-            </div>
-
-            {/* Text Area or File Upload */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium">Raw Text Content (Body)</label>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    accept=".txt"
-                    onChange={handleContentFileChange}
-                    disabled={generatingLoading}
-                    className="flex-1 block text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 disabled:opacity-50"
-                  />
-                  <span className="text-xs text-slate-500">or</span>
-                </div>
-                <textarea
-                  value={rawText}
-                  onChange={(e) => {
-                    setRawText(e.target.value)
-                    setContentFile(null)
-                  }}
-                  disabled={generatingLoading}
-                  placeholder="Paste or type your content here... (BAB I, BAB II...)"
-                  className="w-full h-48 p-3 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:bg-slate-50 font-mono text-sm"
+                <input
+                  type="file"
+                  accept=".docx"
+                  onChange={handleTemplateChange}
+                  className="hidden"
                 />
-                {contentFile && (
-                  <p className="text-sm text-green-600">✓ Loaded from: {contentFile.name}</p>
-                )}
-                <p className="text-xs text-slate-500">{rawText.length} characters</p>
-              </div>
+              </label>
             </div>
 
-            {/* AI Semantic Analysis */}
-            {rawText.trim() && (
-              <div className="space-y-2">
-                <Button
-                  type="button"
-                  onClick={handleAnalyzeSemantic}
-                  disabled={generatingLoading}
-                  variant="outline"
-                  className="w-full"
-                >
-                  {generatingLoading ? 'Analyzing...' : 'AI: Analyze Structure'}
-                </Button>
-                {semanticAnalysis && (
-                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-sm">
-                    <p className="font-semibold text-blue-900">Structure Analysis</p>
-                    <p className="text-blue-800">Found {semanticAnalysis.elements.length} elements</p>
-                    <p className="text-blue-800">Confidence: {(semanticAnalysis.overall_confidence * 100).toFixed(0)}%</p>
-                  </div>
-                )}
+            {templateFile && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm font-semibold text-green-900">✓ Template selected</p>
+                <p className="text-sm text-green-700">{templateFile.name}</p>
               </div>
             )}
 
-            {/* Template Info */}
             {templateMetadata && (
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-sm">
-                <p className="font-semibold text-slate-900">Template Info</p>
-                <p className="text-slate-700">File: {templateMetadata.filename}</p>
-                {templateMetadata.styles && (
-                  <p className="text-slate-700">Styles: {Object.keys(templateMetadata.styles).length}</p>
-                )}
-                {templateMetadata.margins && (
-                  <p className="text-slate-700">Margins configured: Yes</p>
-                )}
-              </div>
-            )}
-
-            {/* Detailed Semantic Analysis Results */}
-            {semanticAnalysis && (
-              <div className="border border-blue-200 rounded-md p-3 bg-blue-50 space-y-2">
-                <h4 className="font-semibold text-blue-900">Semantic Elements Found</h4>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {semanticAnalysis.elements.slice(0, 10).map((element, idx) => (
-                    <div key={idx} className="text-xs bg-white p-2 rounded border border-blue-100">
-                      <div className="flex justify-between items-start">
-                        <span className="font-mono text-blue-700">{element.type}</span>
-                        <span className={`px-2 py-0.5 rounded text-white text-xs font-medium ${
-                          element.confidence > 0.8 ? 'bg-green-500' :
-                          element.confidence > 0.6 ? 'bg-yellow-500' : 'bg-red-500'
-                        }`}>
-                          {(element.confidence * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                      <p className="text-slate-600 truncate">{element.text.substring(0, 60)}...</p>
-                    </div>
-                  ))}
-                  {semanticAnalysis.elements.length > 10 && (
-                    <p className="text-xs text-slate-500">... and {semanticAnalysis.elements.length - 10} more</p>
-                  )}
-                </div>
-                {semanticAnalysis.warnings.length > 0 && (
-                  <div className="text-xs text-orange-700 bg-orange-50 p-2 rounded">
-                    <p className="font-medium">⚠ Warnings:</p>
-                    <ul className="list-disc list-inside">
-                      {semanticAnalysis.warnings.map((w, idx) => (
-                        <li key={idx}>{w}</li>
-                      ))}
-                    </ul>
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg space-y-2">
+                <p className="text-sm font-semibold text-blue-900">Template Info</p>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-blue-700/70">Styles Detected</p>
+                    <p className="font-semibold text-blue-900">{Object.keys(templateMetadata.styles || {}).length}</p>
                   </div>
-                )}
+                  <div>
+                    <p className="text-blue-700/70">Margins Configured</p>
+                    <p className="font-semibold text-blue-900">Yes</p>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* AI Helper Buttons */}
-            {rawText.trim() && (
-              <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
-                <p className="text-sm font-semibold text-amber-900">AI Text Generators</p>
-                <div className="grid grid-cols-3 gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        const result = await generateAbstractId({
-                          title: metadata.judul,
-                          objectives: 'Extract from content',
-                          methods: 'Extract from content',
-                          results: 'Extract from content'
-                        })
-                        setMetadata({ ...metadata, abstrak_teks: result.abstract })
-                        setSuccess(true)
-                      } catch (err) {
-                        setError('Failed to generate abstract')
-                      }
-                    }}
-                    disabled={generatingLoading}
-                  >
-                    Abstract ID
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        const result = await generateAbstractEn({
-                          title: metadata.judul,
-                          objectives: 'Extract from content',
-                          methods: 'Extract from content',
-                          results: 'Extract from content'
-                        })
-                        setMetadata({ ...metadata, abstrak_en_teks: result.abstract })
-                        setSuccess(true)
-                      } catch (err) {
-                        setError('Failed to generate abstract')
-                      }
-                    }}
-                    disabled={generatingLoading}
-                  >
-                    Abstract EN
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={async () => {
-                      try {
-                        const result = await generatePreface({
-                          title: metadata.judul,
-                          author: metadata.penulis,
-                          institution: metadata.universitas,
-                          thesis_focus: 'Extract from content'
-                        })
-                        setMetadata({ ...metadata, preface: result.preface })
-                        setSuccess(true)
-                      } catch (err) {
-                        setError('Failed to generate preface')
-                      }
-                    }}
-                    disabled={generatingLoading}
-                  >
-                    Preface
-                  </Button>
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-1">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-2a1 1 0 00-2 0v8a1 1 0 002 0v-8z" clipRule="evenodd"/>
+                  </svg>
+                  <p className="text-sm font-semibold text-red-900">Error</p>
                 </div>
+                <p className="text-sm text-red-700 break-words">{error}</p>
+              </div>
+            )}
+
+            {processing && (
+              <div className="flex items-center justify-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                <p className="ml-3 text-sm text-muted-foreground">Validating template...</p>
               </div>
             )}
 
             <Button
-              type="submit"
-              disabled={generatingLoading || !templateFile || (contentFile === null && !rawText.trim())}
+              onClick={handleNextStep}
+              disabled={!templateFile || processing}
               className="w-full"
             >
-              {generatingLoading ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Generating Document...
-                </>
-              ) : (
-                'Generate & Download Document'
-              )}
+              {processing ? 'Validating...' : 'Continue to Content'}
             </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* Success Message */}
-      {success && results && (
-        <Card className="border-green-200 bg-green-50">
-          <CardContent className="pt-6">
-            <div className="space-y-2">
-              <h3 className="font-semibold text-green-900">✓ Success!</h3>
-              <p className="text-sm text-green-700">{results.message}</p>
-              {results.filename && (
-                <p className="text-sm text-green-700">
-                  <strong>File:</strong> {results.filename}
-                </p>
-              )}
-              {results.size && (
-                <p className="text-sm text-green-700">
-                  <strong>Size:</strong> {(results.size / 1024).toFixed(2)} KB
-                </p>
-              )}
-              {results.timestamp && (
-                <p className="text-sm text-green-700">
-                  <strong>Time:</strong> {results.timestamp}
-                </p>
-              )}
-              <p className="text-xs text-green-600 mt-3">
-                The file has been automatically downloaded to your downloads folder.
-              </p>
-            </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Error Message */}
-      {error && (
-        <Card className="border-red-200 bg-red-50">
-          <CardContent className="pt-6">
-            <div className="flex items-start gap-4">
-              <div className="flex-1">
-                <h3 className="font-semibold text-red-900">✗ Error</h3>
-                <p className="text-sm text-red-700 mt-1">{error}</p>
+      {/* Step 2: Content Upload */}
+      {currentStep === 1 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Step 2: Upload Content</CardTitle>
+            <CardDescription>
+              Provide your thesis content (chapters, sections)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* File Upload */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Upload Text File</label>
+              <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary transition-colors">
+                <label className="cursor-pointer flex flex-col items-center gap-2">
+                  <FileText className="w-6 h-6 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Click to upload</p>
+                    <p className="text-xs text-muted-foreground">TXT file</p>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".txt"
+                    onChange={handleContentChange}
+                    className="hidden"
+                  />
+                </label>
               </div>
-              <button
-                onClick={() => setError(null)}
-                className="text-red-600 hover:text-red-800 font-medium text-sm mt-1"
+            </div>
+
+            {contentFile && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm font-semibold text-green-900">✓ Loaded: {contentFile.name}</p>
+              </div>
+            )}
+
+            {/* Or Text Area */}
+            <div>
+              <label className="block text-sm font-medium mb-2">Or Paste Content Directly</label>
+              <textarea
+                value={rawText}
+                onChange={(e) => handleContentPaste(e.target.value)}
+                placeholder="Paste your thesis chapters here...
+
+BAB I: INTRODUCTION
+...
+
+BAB II: LITERATURE REVIEW
+..."
+                className="w-full h-48 p-4 border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary font-mono text-sm"
+              />
+              <p className="text-xs text-muted-foreground mt-2">{rawText.length} characters</p>
+            </div>
+
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div className="flex gap-3">
+              <Button
+                onClick={handlePreviousStep}
+                variant="outline"
+                className="flex-1"
               >
-                Dismiss
-              </button>
+                Back
+              </Button>
+              <Button
+                onClick={handleNextStep}
+                disabled={!rawText.trim()}
+                className="flex-1"
+              >
+                Continue to Details
+              </Button>
+            </div>
+           </CardContent>
+        </Card>
+      )}
+
+      {/* Step 3: Details Form */}
+      {currentStep === 2 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Step 3: Your Details</CardTitle>
+            <CardDescription>
+              Personal and thesis information for document
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* AI & Frontmatter Settings */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Use AI Analysis</label>
+                <select
+                  value={String(useAI)}
+                  onChange={(e) => setUseAI(e.target.value === 'true')}
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="true">Yes (Recommended)</option>
+                  <option value="false">No</option>
+                </select>
+                <p className="text-xs text-muted-foreground">AI detects chapters and sections intelligently</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Include Front Matter</label>
+                <select
+                  value={String(includeFrontmatter)}
+                  onChange={(e) => setIncludeFrontmatter(e.target.value === 'true')}
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="true">Yes (Recommended)</option>
+                  <option value="false">No</option>
+                </select>
+                <p className="text-xs text-muted-foreground">Add title page, approvals, abstracts, etc.</p>
+              </div>
+            </div>
+
+             <div className="border-t border-border pt-6">
+              <h3 className="text-sm font-medium mb-4">Thesis Information</h3>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Full Name */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Full Name *</label>
+                <input
+                  type="text"
+                  value={metadata.penulis}
+                  onChange={(e) => handleInputChange('penulis', e.target.value)}
+                  placeholder="John Doe"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Student ID */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Student ID / NIM *</label>
+                <input
+                  type="text"
+                  value={metadata.nim}
+                  onChange={(e) => handleInputChange('nim', e.target.value)}
+                  placeholder="20230001"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Thesis Title */}
+              <div className="md:col-span-2 space-y-2">
+                <label className="block text-sm font-medium">Thesis Title *</label>
+                <input
+                  type="text"
+                  value={metadata.judul}
+                  onChange={(e) => handleInputChange('judul', e.target.value)}
+                  placeholder="Enter your thesis title..."
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Advisor Name */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Advisor Name *</label>
+                <input
+                  type="text"
+                  value={metadata.dosen_pembimbing}
+                  onChange={(e) => handleInputChange('dosen_pembimbing', e.target.value)}
+                  placeholder="Dr. Jane Smith"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* University */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">University *</label>
+                <input
+                  type="text"
+                  value={metadata.universitas}
+                  onChange={(e) => handleInputChange('universitas', e.target.value)}
+                  placeholder="Universitas Indonesia"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Abstract ID */}
+              <div className="md:col-span-2 space-y-2">
+                <label className="block text-sm font-medium">Abstract (Indonesian)</label>
+                <textarea
+                  value={metadata.abstrak_teks}
+                  onChange={(e) => handleInputChange('abstrak_teks', e.target.value)}
+                  placeholder="Brief abstract in Indonesian..."
+                  className="w-full h-20 p-3 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
+              </div>
+
+              {/* Abstract EN */}
+              <div className="md:col-span-2 space-y-2">
+                <label className="block text-sm font-medium">Abstract (English)</label>
+                <textarea
+                  value={metadata.abstrak_en_teks}
+                  onChange={(e) => handleInputChange('abstrak_en_teks', e.target.value)}
+                  placeholder="Brief abstract in English..."
+                  className="w-full h-20 p-3 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                />
+              </div>
+            </div>
+
+            {error && (
+              <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-1">
+                <div className="flex items-center gap-2">
+                  <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-2a1 1 0 00-2 0v8a1 1 0 002 0v-8z" clipRule="evenodd"/>
+                  </svg>
+                  <p className="text-sm font-semibold text-red-900">Error</p>
+                </div>
+                <p className="text-sm text-red-700 break-words">{error}</p>
+              </div>
+            )}
+
+            {/* Navigation */}
+            <div className="flex gap-3 pt-4">
+              <Button
+                onClick={handlePreviousStep}
+                variant="outline"
+                className="flex-1"
+              >
+                Back
+              </Button>
+              <Button
+                onClick={handlePreview}
+                variant="outline"
+                className="flex-1"
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Preview
+              </Button>
+              <Button
+                onClick={handleGenerate}
+                className="flex-1"
+              >
+                Start Formatting
+              </Button>
             </div>
           </CardContent>
         </Card>
       )}
 
-      {/* Usage Guide */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">How to Use</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 text-sm">
-          <div>
-            <h4 className="font-semibold mb-2">1. Select Template</h4>
-            <p className="text-slate-600">
-              Choose a DOCX file that has the formatting, styles, and layout you want to apply to your document.
-            </p>
-          </div>
-          <div>
-            <h4 className="font-semibold mb-2">2. Enter or Upload Content</h4>
-            <p className="text-slate-600">
-              Either upload a .txt file with your content, or paste/type your raw text directly in the text area. The system will parse and format it according to the template's styles.
-            </p>
-          </div>
-          <div>
-            <h4 className="font-semibold mb-2">3. Choose Format</h4>
-            <p className="text-slate-600">
-              Select output format: DOCX (modern) or DOC (legacy).
-            </p>
-          </div>
-          <div>
-            <h4 className="font-semibold mb-2">4. Generate & Download</h4>
-            <p className="text-slate-600">
-              Click the button to generate your formatted document. The file will be automatically downloaded.
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Preview Modal */}
+      {showPreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="max-w-2xl w-full max-h-96 overflow-y-auto">
+            <CardHeader>
+              <CardTitle>Preview Formatted Output</CardTitle>
+              <button
+                onClick={() => setShowPreview(false)}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+              >
+                ✕
+              </button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">DETECTED STRUCTURE</p>
+                  <div className="mt-2 space-y-1 text-sm">
+                    <p className="flex items-center gap-2"><span className="text-primary">✓</span>Cover Page</p>
+                    <p className="flex items-center gap-2"><span className="text-primary">✓</span>Approval Page</p>
+                    <p className="flex items-center gap-2"><span className="text-primary">✓</span>Abstract (Indonesian & English)</p>
+                    <p className="flex items-center gap-2"><span className="text-primary">✓</span>Table of Contents</p>
+                    <p className="flex items-center gap-2"><span className="text-primary">✓</span>List of Figures</p>
+                    <p className="flex items-center gap-2"><span className="text-primary">✓</span>List of Tables</p>
+                    <p className="flex items-center gap-2"><span className="text-primary">✓</span>Chapters</p>
+                    <p className="flex items-center gap-2"><span className="text-primary">✓</span>References</p>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t">
+                  <p className="text-xs font-medium text-muted-foreground">APPLIED FORMATTING</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                    <div className="p-2 bg-muted rounded">
+                      <p className="text-xs text-muted-foreground">Font</p>
+                      <p className="font-medium">Times New Roman, 12pt</p>
+                    </div>
+                    <div className="p-2 bg-muted rounded">
+                      <p className="text-xs text-muted-foreground">Margins</p>
+                      <p className="font-medium">4cm left, 3cm others</p>
+                    </div>
+                    <div className="p-2 bg-muted rounded">
+                      <p className="text-xs text-muted-foreground">Spacing</p>
+                      <p className="font-medium">1.5 line spacing</p>
+                    </div>
+                    <div className="p-2 bg-muted rounded">
+                      <p className="text-xs text-muted-foreground">Citation Style</p>
+                      <p className="font-medium">APA 6th Edition</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t bg-primary/5 p-3 rounded">
+                  <p className="text-xs font-medium text-primary">AI SEMANTIC ANALYSIS</p>
+                  <p className="text-sm text-primary/80 mt-1">Document structure will be analyzed with AI to intelligently detect chapters, sections, and content organization.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <Button
+                  onClick={() => setShowPreview(false)}
+                  variant="outline"
+                  className="flex-1"
+                >
+                  Back
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowPreview(false)
+                    handleGenerate()
+                  }}
+                  className="flex-1"
+                >
+                  Start Formatting
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

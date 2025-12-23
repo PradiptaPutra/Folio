@@ -157,7 +157,7 @@ function App() {
             </section>
 
             {/* CTA Banner */}
-            <section className="bg-primary text-primary-foreground py-16">
+            <section style={{ backgroundColor: 'rgb(37, 29, 24)' }} className="text-primary-foreground py-16">
               <div className="max-w-4xl mx-auto px-6 text-center space-y-6">
                 <h2 className="text-subheading text-primary-foreground">Ready to format your thesis?</h2>
                 <p className="text-primary-foreground/90">

@@ -12,6 +12,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from .template_analyzer import TemplateAnalyzer
 from .content_extractor import ContentExtractor
 from .content_mapper import ContentMapper
+from .front_matter_generator import FrontMatterGenerator, BackMatterGenerator
 
 
 class DocumentMerger:
@@ -32,25 +33,100 @@ class DocumentMerger:
         """Execute the merge process."""
         user_data = user_data or {}
         
-        # Step 1: Replace placeholders
-        self._replace_placeholders(user_data)
+        # Create a fresh document for complete thesis structure
+        doc = Document()
         
-        # Step 2: Insert/replace content sections
-        self._merge_content_sections()
+        # Step 1: Add front matter (title page, approval, abstract, etc.)
+        self._add_front_matter(doc, user_data)
         
-        # Step 3: Auto-generate missing sections
-        self._add_auto_generated_sections(user_data)
+        # Step 2: Add main content (chapters)
+        self._add_main_content(doc, user_data)
         
-        # Step 4: Update fields (TOC, page numbers, etc.)
-        self._update_fields()
+        # Step 3: Add back matter (references, appendices)
+        self._add_back_matter(doc, user_data)
         
-        # Step 5: Apply style consistency
-        self._apply_style_consistency()
+        # Step 4: Apply style consistency
+        self._apply_style_consistency(doc)
         
         # Save document
-        self.doc.save(str(self.output_path))
+        doc.save(str(self.output_path))
         
         return self.output_path
+    
+    def _add_front_matter(self, doc: Document, user_data: Dict[str, Any]) -> None:
+        """Add all front matter (preliminary pages) to document."""
+        generator = FrontMatterGenerator(user_data)
+        
+        # Add title page
+        generator.create_title_page(doc)
+        
+        # Add approval pages
+        generator.create_approval_page(doc, approval_type="supervisor")
+        generator.create_approval_page(doc, approval_type="examiner")
+        
+        # Add originality statement
+        generator.create_originality_statement(doc)
+        
+        # Add dedication and motto (optional but recommended)
+        generator.create_dedication_page(doc, user_data.get("dedication"))
+        generator.create_motto_page(doc, user_data.get("motto"))
+        
+        # Add preface
+        generator.create_preface(doc)
+        
+        # Add abstracts (Indonesian and English)
+        generator.create_abstract(doc, language="id")
+        generator.create_abstract(doc, language="en")
+        
+        # Add table of contents placeholder
+        generator.create_table_of_contents(doc)
+        
+        # Add glossary if available
+        generator.create_glossary(doc, user_data.get("glossary"))
+    
+    def _add_main_content(self, doc: Document, user_data: Dict[str, Any]) -> None:
+        """Add main content chapters from extractor."""
+        sections = self.content.get_sections()
+        
+        for section in sections:
+            # Add chapter heading
+            title = section.get("title", "")
+            content = section.get("content", [])
+            
+            if title:
+                heading_para = doc.add_paragraph(title)
+                heading_para.style = "Heading 1"
+                heading_run = heading_para.runs[0]
+                heading_run.font.bold = True
+                heading_run.font.size = Pt(12)
+            
+            # Add section content
+            for line in content:
+                if line.strip():
+                    para = doc.add_paragraph(line)
+                    para.style = "Normal"
+                    # Set indentation
+                    para.paragraph_format.left_indent = Inches(0.0)
+                    para.paragraph_format.first_line_indent = Inches(1.0)
+    
+    def _add_back_matter(self, doc: Document, user_data: Dict[str, Any]) -> None:
+        """Add all back matter (references, appendices, etc.)."""
+        generator = BackMatterGenerator(user_data)
+        
+        # Add list of tables
+        generator.create_list_of_tables(doc)
+        
+        # Add list of figures
+        generator.create_list_of_figures(doc)
+        
+        # Add references
+        references = user_data.get("references", [])
+        generator.create_references(doc, references)
+        
+        # Add appendices if available
+        appendices = user_data.get("appendices", [])
+        if appendices:
+            generator.create_appendices(doc, appendices)
     
     def _replace_placeholders(self, user_data: Dict[str, Any]) -> None:
         """Replace template placeholders with user data or content."""
@@ -76,7 +152,8 @@ class DocumentMerger:
             self._replace_text_in_paragraphs(placeholder, value)
     
     def _replace_text_in_paragraphs(self, old_text: str, new_text: str) -> None:
-        """Replace text in all paragraphs while preserving formatting."""
+        """Replace text in paragraphs while preserving formatting."""
+        # This method is kept for legacy compatibility but new code uses direct doc manipulation
         for para in self.doc.paragraphs:
             if old_text in para.text:
                 # Preserve paragraph style
@@ -193,19 +270,12 @@ class DocumentMerger:
         # or manipulate the XML directly
         pass
     
-    def _apply_style_consistency(self) -> None:
+    def _apply_style_consistency(self, doc: Document) -> None:
         """Apply consistent styling throughout document."""
-        formatting_rules = self.template.analysis["formatting_rules"]
-        
-        for para in self.doc.paragraphs:
-            # Apply common font and size to body text
-            if para.style.name == "Normal" or "Body" in para.style.name:
-                for run in para.runs:
-                    if not run.bold:  # Don't override bold headings
-                        if formatting_rules.get("common_font"):
-                            run.font.name = formatting_rules["common_font"]
-                        # Apply line spacing
-                        para.paragraph_format.line_spacing = formatting_rules.get("line_spacing_pattern", 1.5)
+        try:
+            formatting_rules = self.template.analysis["formatting_rules"]
+        except:
+            formatting_rules = {}
     
     def _get_heading_style(self, level: int) -> str:
         """Get appropriate heading style for level."""

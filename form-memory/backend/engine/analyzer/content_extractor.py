@@ -13,10 +13,13 @@ class ContentExtractor:
     """Extracts and structures content from source files."""
     
     def __init__(self, content_path: str):
-        """Initialize with content file (DOCX or TXT)."""
+        """Initialize content extractor."""
         self.content_path = Path(content_path)
         self.is_docx = self.content_path.suffix.lower() == '.docx'
-        self.content = self._load_content()
+        # Load content data
+        content_data = self._load_content()
+        self._sections = content_data.get("sections", [])
+        self._raw_text = content_data.get("raw_text", "")
     
     def _load_content(self) -> Dict[str, Any]:
         """Load content from file."""
@@ -96,7 +99,7 @@ class ContentExtractor:
         
         # Patterns for headings
         heading_patterns = [
-            (r"^BAB\s+([IVX]+|[0-9]+)\s*\n(.+?)$", "chapter"),
+            (r"^BAB\s+([IVX]+|[0-9]+)[:.]?\s*(.+?)$", "chapter"),
             (r"^([0-9]+\.[0-9]+)\s+(.+?)$", "section"),
             (r"^#+ (.+?)$", "markdown"),
         ]
@@ -162,42 +165,30 @@ class ContentExtractor:
     
     def get_sections(self) -> List[Dict[str, Any]]:
         """Return extracted sections."""
-        return self.content["sections"]
+        return self._sections if self._sections else []
     
     def get_raw_text(self) -> str:
         """Return raw text content."""
-        return self.content["raw_text"]
+        return self._raw_text
     
     def get_tables(self) -> List[Dict[str, Any]]:
         """Return extracted tables."""
-        return self.content["tables"]
+        content_data = self._load_content()
+        return content_data.get("tables", [])
     
     def get_section_by_title(self, title_pattern: str) -> Optional[Dict[str, Any]]:
         """Find section by title pattern."""
-        for section in self.content["sections"]:
+        for section in self._sections:
             if re.search(title_pattern, section["title"], re.IGNORECASE):
                 return section
         return None
     
-    def get_summary(self) -> str:
-        """Return a summary of extracted content."""
-        sections = self.content["sections"]
+    def get_summary(self) -> Dict[str, Any]:
+        """Get extraction summary."""
+        summary = f"Total Content Length: {len(self.get_raw_text())} characters"
         
-        summary = f"""
-CONTENT EXTRACTION SUMMARY
-==========================
-
-Total Sections: {len(sections)}
-
-Sections Found:
-"""
-        for section in sections[:10]:  # First 10
-            summary += f"- {section['title']} (Level {section['level']})\n"
-        
-        if len(sections) > 10:
-            summary += f"... and {len(sections) - 10} more\n"
-        
-        summary += f"\nTables: {len(self.content['tables'])}\n"
-        summary += f"Total Content Length: {len(self.content['raw_text'])} characters"
-        
-        return summary.strip()
+        return {
+            "summary": summary.strip(),
+            "sections_count": len(self.get_sections()),
+            "file_type": "docx" if self.is_docx else "text"
+        }

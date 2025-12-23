@@ -306,14 +306,20 @@ async def generate_document(
     abstrak_teks: str = Form(None),
     abstrak_en_teks: str = Form(None),
     kata_kunci: str = Form(None),
-    output_format: str = Form("docx")
+    output_format: str = Form("docx"),
+    dosen_pembimbing: str = Form(None),
+    use_ai_analysis: str = Form("true")
 ):
     """
-    Unified document generation endpoint.
+    Unified document generation endpoint - NOW CREATES COMPLETE THESIS with AI!
     
-    Supports two workflows:
-    1. Template-based generation: Upload template + raw text content
-    2. Direct enforcement: Upload DOCX file directly
+    Generates a fully-structured thesis document with:
+    - Front Matter: Title page, approvals, originality, preface, abstracts
+    - Main Content: Chapters from provided content (AI-analyzed structure)
+    - Back Matter: References, appendices, lists
+    
+    Uses AI semantic analysis to intelligently detect document structure
+    when available, falls back to rule-based extraction if needed.
     
     Parameters:
     - file: DOCX file to enforce (direct enforcement)
@@ -321,7 +327,8 @@ async def generate_document(
     - reference_name: Name of previously uploaded template
     - content_file: Raw text content (template-based)
     - include_frontmatter: Whether to add front matter
-    - [frontmatter fields]: Optional front matter data
+    - use_ai_analysis: Whether to use AI semantic analysis (true/false)
+    - [frontmatter fields]: Front matter data
     - output_format: 'docx' or 'doc'
     """
     
@@ -331,10 +338,16 @@ async def generate_document(
     md_dir.mkdir(parents=True, exist_ok=True)
     out_dir.mkdir(parents=True, exist_ok=True)
     
+    # Initialize content_path to None for cleanup
+    content_path = None
+    
     try:
-        include_fm = include_frontmatter.lower() in ('true', '1', 'yes')
+        from engine.analyzer.complete_thesis_builder import create_complete_thesis
         
-        # ===== WORKFLOW 1: Template-based generation =====
+        include_fm = include_frontmatter.lower() in ('true', '1', 'yes')
+        use_ai = use_ai_analysis.lower() in ('true', '1', 'yes')
+        
+        # ===== WORKFLOW 1: Template-based generation with COMPLETE THESIS (AI-enhanced) =====
         if (template_file or reference_name) and content_file:
             # Handle template upload
             if template_file:
@@ -354,53 +367,58 @@ async def generate_document(
             
             # Read text content
             raw_text = (await content_file.read()).decode("utf-8")
-            markdown = normalize_txt_to_markdown(raw_text)
+            print(f"[DEBUG] Raw text length: {len(raw_text)}")
+            print(f"[DEBUG] Raw text preview: {raw_text[:200]}...")
+
+            # Prepare output path
+            student_name = penulis or "Student"
+            output_filename = f"Skripsi_{student_name.replace(' ', '_')}.docx"
+            output_path = out_dir / output_filename
             
-            # Generate from template
-            md_path = md_dir / "content.md"
-            md_path.write_text(markdown, encoding="utf-8")
-            
-            fmt = output_format.lower().strip()
-            if fmt not in {"docx", "doc"}:
-                fmt = "docx"
-            output_path = out_dir / ("final." + fmt)
-            
-            # Extract template styles
-            extracted = extract_docx_styles(ref_path)
-            normal_style = extracted["styles"].get("Normal", {})
-            paragraph_config = normal_style.get("paragraph", {})
-            style_usage = detect_style_usage(str(ref_path))
-            
-            style_config = {
-                "margins": extracted["margins"],
-                "paragraph": paragraph_config,
-                "mapping": style_usage
+            # Prepare user data for complete thesis builder
+            user_data = {
+                "title": judul or "JUDUL SKRIPSI",
+                "author": penulis or "Nama Penulis",
+                "nim": nim or "NIM",
+                "advisor": dosen_pembimbing or "Nama Dosen Pembimbing",
+                "institution": universitas or "Universitas",
+                "date": tahun or "2025",
+                "abstract_id": abstrak_teks or abstrak_id or "",
+                "abstract_en": abstrak_en_teks or "",
+                "keywords": kata_kunci.split(',') if kata_kunci else [],
             }
             
-            # Prepare front-matter data
-            frontmatter_data = None
-            if include_fm:
-                frontmatter_data = {
-                    'judul': judul or 'JUDUL SKRIPSI',
-                    'penulis': penulis or 'Nama Penulis',
-                    'nim': nim or 'NIM',
-                    'universitas': universitas or 'Universitas',
-                    'tahun': int(tahun) if tahun else 2024,
-                    'abstrak_id': abstrak_id or 'ABSTRAK',
-                    'abstrak_teks': abstrak_teks or 'Isi abstrak di sini.',
-                    'abstrak_en_teks': abstrak_en_teks or 'Abstract content here.',
-                    'kata_kunci': kata_kunci or 'keyword1, keyword2'
-                }
-
-            # Generate document (always .docx internally)
-            docx_output = out_dir / "final.docx"
-            markdown_to_docx(md_path, ref_path, docx_output, style_config, frontmatter_data)
+            # Create unique content file for thesis builder
+            import time
+            timestamp = int(time.time())
+            content_path = UPLOAD_DIR / f"thesis_content_{timestamp}.txt"
+            content_path.write_text(raw_text, encoding="utf-8")
+            
+            # Build COMPLETE thesis document
+            result = create_complete_thesis(
+                str(ref_path),
+                str(content_path),
+                str(output_path),
+                user_data,
+                use_ai=use_ai,
+                include_frontmatter=include_fm
+            )
+            
+            if not isinstance(result, dict):
+                raise Exception(f"Expected dict result, got {type(result).__name__}: {result}")
+            
+            if result.get("status") != "success":
+                raise Exception(result.get("message", "Failed to create thesis"))
+            
+            # Clean up temporary content file
+            if content_path is not None and content_path.exists():
+                content_path.unlink()
             
             # Return as file download
             from fastapi.responses import FileResponse
             return FileResponse(
-                docx_output,
-                filename="formatted.docx",
+                output_path,
+                filename=output_filename,
                 media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             )
         
@@ -414,9 +432,98 @@ async def generate_document(
         raise
     except Exception as e:
         import traceback
+        # Clean up temporary content file on error
+        if content_path is not None and content_path.exists():
+            try:
+                content_path.unlink()
+            except:
+                pass
         error_msg = f"Generation failed: {str(e)}\n{traceback.format_exc()}"
         print(error_msg)
         raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+
+
+@app.post("/validate-semantic-structure")
+async def validate_semantic_structure(
+    content_file: UploadFile = File(...),
+    use_ai: str = Form("true")
+):
+    """
+    Validate the semantic structure of a document using AI analysis.
+    
+    Returns:
+    - semantic_types: List of detected section types (introduction, methodology, etc.)
+    - validation_status: Overall structure validation status
+    - issues: Any structural problems found
+    - warnings: Warnings about missing sections
+    - suggestions: Improvement recommendations
+    - ai_used: Whether AI analysis was used
+    - summary: Extraction summary with confidence scores
+    """
+    try:
+        from engine.analyzer.ai_enhanced_extractor import AIEnhancedContentExtractor
+        
+        # Save content file temporarily
+        content_data = await content_file.read()
+        content_path = UPLOAD_DIR / content_file.filename
+        with content_path.open("wb") as buffer:
+            buffer.write(content_data)
+        
+        # Extract and validate
+        use_ai_flag = use_ai.lower() in ('true', '1', 'yes')
+        extractor = AIEnhancedContentExtractor(str(content_path), use_ai=use_ai_flag)
+        
+        validation = extractor.get_semantic_validation()
+        summary = extractor.get_summary()
+        
+        return {
+            "status": "success",
+            "validation": validation,
+            "summary": summary,
+            "sections": [
+                {
+                    "title": s.get("title", "Untitled"),
+                    "type": s.get("semantic_type", "unknown"),
+                    "level": s.get("level", 0),
+                    "ai_analyzed": s.get("ai_analyzed", False),
+                    "confidence": s.get("ai_confidence", 0.0),
+                    "length": len(s.get("content", []))
+                }
+                for s in extractor.get_sections()
+            ]
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Semantic validation failed: {str(e)}"
+        )
+
+
+@app.get("/ai-analysis-status")
+async def ai_analysis_status():
+    """Check if AI semantic analysis is available."""
+    try:
+        from engine.analyzer.ai_enhanced_extractor import AI_AVAILABLE
+        from engine.ai.semantic_parser import SemanticParser
+        
+        return {
+            "ai_available": AI_AVAILABLE,
+            "semantic_parser_available": True,
+            "capabilities": [
+                "Chapter detection",
+                "Section classification",
+                "Semantic type inference",
+                "Document structure validation",
+                "Confidence scoring"
+            ] if AI_AVAILABLE else []
+        }
+    except Exception as e:
+        return {
+            "ai_available": False,
+            "semantic_parser_available": False,
+            "error": str(e)
+        }
 
 
 # ============================================================================
@@ -503,10 +610,12 @@ async def format_thesis_endpoint(
     date: str = Form(...)
 ):
     """
-    Universal thesis formatter endpoint.
+    Universal thesis formatter endpoint - creates COMPLETE thesis documents.
     
-    Accepts any university template and content, intelligently merges them
-    with user data while preserving all formatting rules.
+    Creates a fully structured thesis with:
+    - Front Matter: Title page, approval pages, originality statement, preface, abstracts
+    - Main Content: Chapters from user content
+    - Back Matter: References, appendices, lists of tables/figures
     
     Parameters:
     - template_file: DOCX template from university
@@ -519,6 +628,8 @@ async def format_thesis_endpoint(
     - date: Current date
     """
     try:
+        from engine.analyzer.complete_thesis_builder import create_complete_thesis
+        
         # Save files
         template_data = await template_file.read()
         content_data = await content_file.read()
@@ -536,23 +647,12 @@ async def format_thesis_endpoint(
             else:
                 f.write(content_data.decode('utf-8'))
         
-        # Step 1: Analyze template
-        template_analyzer = TemplateAnalyzer(str(template_path))
-        
-        # Step 2: Extract content
-        content_extractor = ContentExtractor(str(content_path))
-        
-        # Step 3: Create mapping
-        content_mapper = ContentMapper(template_analyzer, content_extractor)
-        
-        # Step 4: Merge documents
+        # Prepare output path
         output_filename = f"Skripsi_{author.replace(' ', '_')}_{date.replace('/', '-')}.docx"
         output_path = BASE_DIR / "storage" / "outputs" / output_filename
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        merger = DocumentMerger(template_analyzer, content_extractor, content_mapper, str(output_path))
-        
-        # Prepare user data
+        # Build complete thesis
         user_data = {
             "title": title,
             "author": author,
@@ -562,21 +662,22 @@ async def format_thesis_endpoint(
             "date": date,
         }
         
-        # Execute merge
-        final_path = merger.merge(user_data)
+        result = create_complete_thesis(
+            str(template_path),
+            str(content_path),
+            str(output_path),
+            user_data
+        )
         
-        # Generate report
-        report = merger.get_merge_report()
+        if result["status"] != "success":
+            raise Exception(result.get("message", "Failed to create thesis"))
         
-        # Read file for download
+        # Return file for download
         from fastapi.responses import FileResponse
         return FileResponse(
-            final_path,
+            output_path,
             filename=output_filename,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            headers={
-                "X-Merge-Report": str(report).replace('"', "'")  # Include report in header
-            }
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
         
     except Exception as e:
@@ -612,6 +713,54 @@ async def universal_formatter_info():
             "/universal-formatter/info": "Get formatter information",
         }
     }
+
+
+@app.post("/preview-document")
+async def preview_document(file: UploadFile = File(...)):
+    """
+    Convert DOCX file to HTML for preview in browser.
+    """
+    try:
+        # Save uploaded file temporarily
+        temp_dir = BASE_DIR / "storage" / "temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+
+        temp_file = temp_dir / f"preview_{file.filename}"
+        with open(temp_file, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        # Convert DOCX to HTML using pandoc
+        import subprocess
+        html_output = temp_file.with_suffix('.html')
+
+        # Run pandoc to convert DOCX to HTML
+        result = subprocess.run(
+            ['pandoc', str(temp_file), '-o', str(html_output), '--self-contained'],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Pandoc conversion failed: {result.stderr}")
+
+        # Read the HTML content
+        with open(html_output, 'r', encoding='utf-8') as f:
+            html_content = f.read()
+
+        # Clean up temp files
+        temp_file.unlink(missing_ok=True)
+        html_output.unlink(missing_ok=True)
+
+        return {
+            "status": "success",
+            "html_content": html_content
+        }
+
+    except Exception as e:
+        import traceback
+        error_msg = f"Document preview failed: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        raise HTTPException(status_code=500, detail=f"Preview generation failed: {str(e)}")
 
 
 @app.get("/enforcement-status")

@@ -97,6 +97,7 @@ export interface FrontmatterData {
   nim?: string
   universitas?: string
   tahun?: number | string
+  dosen_pembimbing?: string
   abstrak_id?: string
   abstrak_teks?: string
   abstrak_en_teks?: string
@@ -350,14 +351,16 @@ export function downloadFile(blob: Blob, filename: string): void {
 }
 
 /**
- * Generate a formatted document from template + content using template executor
- * Returns the generated DOCX file as a blob
+ * Generate a formatted document from template + content - NOW CREATES COMPLETE THESIS!
+ * Uses AI semantic analysis to intelligently structure document.
+ * Returns the complete, professionally-structured thesis DOCX file as a blob
  */
 export async function generateFromTemplate(
   templateFile: File,
   rawText: string,
   frontmatterData?: FrontmatterData,
-  includeFrontmatter: boolean = false
+  includeFrontmatter: boolean = false,
+  useAIAnalysis: boolean = true
 ): Promise<{ blob: Blob; filename: string }> {
   try {
     const textFile = new File([rawText], 'content.txt', { type: 'text/plain' })
@@ -366,6 +369,7 @@ export async function generateFromTemplate(
     formData.append('template_file', templateFile)
     formData.append('content_file', textFile)
     formData.append('include_frontmatter', String(includeFrontmatter))
+    formData.append('use_ai_analysis', String(useAIAnalysis))
 
     if (includeFrontmatter && frontmatterData) {
       formData.append('judul', frontmatterData.judul || '')
@@ -373,6 +377,7 @@ export async function generateFromTemplate(
       formData.append('nim', frontmatterData.nim || '')
       formData.append('universitas', frontmatterData.universitas || '')
       formData.append('tahun', String(frontmatterData.tahun || ''))
+      formData.append('dosen_pembimbing', frontmatterData.dosen_pembimbing || 'Nama Dosen Pembimbing')
       formData.append('abstrak_id', frontmatterData.abstrak_id || '')
       formData.append('abstrak_teks', frontmatterData.abstrak_teks || '')
       formData.append('abstrak_en_teks', frontmatterData.abstrak_en_teks || '')
@@ -589,4 +594,108 @@ export async function getFormatterInfo(): Promise<{ status: string; message: str
   }
 }
 
+/**
+ * Validate semantic structure of document content
+ */
+export async function validateSemanticStructure(
+  contentFile: File,
+  useAI: boolean = true
+): Promise<{
+  status: string
+  validation: {
+    status: string
+    issues: string[]
+    warnings: string[]
+    suggestions: string[]
+  }
+  summary: {
+    total_sections: number
+    ai_analyzed_sections: number
+    rule_based_sections: number
+    ai_available: boolean
+    semantic_types: string[]
+    average_confidence: number
+  }
+  sections: Array<{
+    title: string
+    type: string
+    level: number
+    ai_analyzed: boolean
+    confidence: number
+    length: number
+  }>
+}> {
+  try {
+    const formData = new FormData()
+    formData.append('content_file', contentFile)
+    formData.append('use_ai', String(useAI))
+
+    const response = await apiClient.post(
+      '/validate-semantic-structure',
+      formData,
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    )
+    return response.data
+  } catch (error) {
+    const axiosError = error as AxiosError
+    throw {
+      status: axiosError.response?.status || 500,
+      message: 'Failed to validate semantic structure',
+      detail: axiosError.message,
+    } as ApiError
+  }
+}
+
+/**
+ * Check if AI semantic analysis is available
+ */
+export async function getAIAnalysisStatus(): Promise<{
+  ai_available: boolean
+  semantic_parser_available: boolean
+  capabilities: string[]
+  error?: string
+}> {
+  try {
+    const response = await apiClient.get('/ai-analysis-status')
+    return response.data
+  } catch (error) {
+    const axiosError = error as AxiosError
+    return {
+      ai_available: false,
+      semantic_parser_available: false,
+      capabilities: [],
+      error: axiosError.message,
+    }
+  }
+}
+
+/**
+ * Generate HTML preview of a document
+ */
+export async function previewDocument(docxFile: File): Promise<{ html_content: string }> {
+  try {
+    const formData = new FormData()
+    formData.append('file', docxFile)
+
+    const response = await apiClient.post('/preview-document', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  } catch (error) {
+    const axiosError = error as AxiosError
+    throw {
+      status: axiosError.response?.status || 500,
+      message: 'Failed to generate document preview',
+      detail: axiosError.message,
+    } as ApiError
+  }
+}
+
 export default apiClient
+

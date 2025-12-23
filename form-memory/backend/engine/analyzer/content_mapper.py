@@ -81,7 +81,7 @@ class ContentMapper:
         chapter_pattern = r"^(BAB|CHAPTER|BAGIAN|PART)\s+([0-9]+|[IVX]+)"
         
         for section in sections:
-            if re.match(chapter_pattern, section["title"], re.IGNORECASE):
+            if isinstance(section, dict) and re.match(chapter_pattern, section["title"], re.IGNORECASE):
                 chapters.append({
                     "title": section["title"],
                     "source": "content",
@@ -171,14 +171,14 @@ class ContentMapper:
         
         # 2. Insert front matter
         for section, data in self.mapping["front_matter"].items():
-            if data and data.get("action") == "INSERT":
+            if isinstance(data, dict) and data.get("action") == "INSERT":
                 plan.append({
                     "action": "INSERT_SECTION",
                     "section": section,
                     "source": "content",
                     "priority": "HIGH"
                 })
-            elif data and data.get("action") == "AUTO_GENERATE":
+            elif isinstance(data, dict) and data.get("action") == "AUTO_GENERATE":
                 plan.append({
                     "action": "AUTO_GENERATE_SECTION",
                     "section": section,
@@ -203,11 +203,12 @@ class ContentMapper:
             })
         
         for appendix in self.mapping["back_matter"]["appendices"]:
-            plan.append({
-                "action": "INSERT_APPENDIX",
-                "title": appendix["title"],
-                "priority": "MEDIUM"
-            })
+            if isinstance(appendix, dict):
+                plan.append({
+                    "action": "INSERT_APPENDIX",
+                    "title": appendix.get("title", "Untitled Appendix"),
+                    "priority": "MEDIUM"
+                })
         
         # 5. Add missing critical sections
         for section in self.mapping["missing_sections"]["critical"]:
