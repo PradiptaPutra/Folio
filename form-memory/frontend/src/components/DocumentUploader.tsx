@@ -2,8 +2,6 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { 
-  enforceDocument, 
-  downloadFile, 
   type FrontmatterData,
   type ApiError 
 } from '@/lib/api'
@@ -60,38 +58,12 @@ export function DocumentUploader() {
     setSuccess(false)
 
     try {
-      const { blob, filename } = await enforceDocument(
-        file,
-        includeFrontmatter,
-        includeFrontmatter ? frontmatterData : undefined
-      )
-
-      // Download the file
-      downloadFile(blob, filename)
-      
-      setSuccess(true)
-      setResults({
-        filename,
-        size: blob.size,
-        timestamp: new Date().toLocaleString(),
-      })
-      
-      // Reset form after success
-      setFile(null)
-      setFrontmatterData({
-        judul: '',
-        penulis: '',
-        nim: '',
-        universitas: '',
-        tahun: new Date().getFullYear().toString(),
-        abstrak_teks: '',
-        abstrak_en_teks: '',
-        kata_kunci: '',
-      })
+      // Direct DOCX upload workflow is deprecated
+      // Use TemplateGenerator component instead (template + content workflow)
+      setError('Direct DOCX enforcement is deprecated. Please use the Template Generator workflow instead: 1) Select a template DOCX, 2) Provide content, 3) Generate formatted document.')
     } catch (err) {
       const apiError = err as ApiError
-      setError(apiError.detail || apiError.message || 'An error occurred while enforcing the document')
-      console.error('Enforcement error:', err)
+      setError(apiError.detail || apiError.message || 'An error occurred')
     } finally {
       setLoading(false)
     }

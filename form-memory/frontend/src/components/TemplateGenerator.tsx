@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { generateFromText, downloadFile, type ApiError } from '@/lib/api'
+import { generateFromTemplate, downloadFile, parseTextSemantics, validateTemplate, generateAbstractId, generateAbstractEn, generatePreface, type ApiError, type SemanticParseResult } from '@/lib/api'
 
 export function TemplateGenerator() {
   const [templateFile, setTemplateFile] = useState<File | null>(null)
   const [contentFile, setContentFile] = useState<File | null>(null)
   const [rawText, setRawText] = useState<string>('')
-  const [outputFormat, setOutputFormat] = useState<'docx' | 'doc'>('docx')
 
   // Metadata State
   const [metadata, setMetadata] = useState({
@@ -18,11 +17,14 @@ export function TemplateGenerator() {
     tahun: new Date().getFullYear().toString(),
     abstrak_teks: '',
     abstrak_en_teks: '',
-    kata_kunci: ''
+    kata_kunci: '',
+    preface: ''
   })
   const [includeFrontmatter, setIncludeFrontmatter] = useState(true)
 
   const [generatingLoading, setGeneratingLoading] = useState(false)
+  const [semanticAnalysis, setSemanticAnalysis] = useState<SemanticParseResult | null>(null)
+  const [templateMetadata, setTemplateMetadata] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const [results, setResults] = useState<any>(null)
@@ -31,16 +33,26 @@ export function TemplateGenerator() {
     setMetadata(prev => ({ ...prev, [field]: value }))
   }
 
-  const handleTemplateFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTemplateFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0]
     if (selectedFile) {
       if (!selectedFile.name.endsWith('.docx')) {
         setError('Please select a valid .docx template file')
         return
       }
+      
       setTemplateFile(selectedFile)
       setError(null)
       setSuccess(false)
+      
+      // Validate template and get metadata
+      try {
+        const metadata = await validateTemplate(selectedFile)
+        setTemplateMetadata(metadata)
+      } catch (err) {
+        const apiError = err as ApiError
+        setError(`Template validation failed: ${apiError.detail || apiError.message}`)
+      }
     }
   }
 
@@ -51,10 +63,8 @@ export function TemplateGenerator() {
         setError('Please select a valid .txt file for content')
         return
       }
-      // Store the file for later use in API call
       setContentFile(selectedFile)
 
-      // Also read and display the content
       const reader = new FileReader()
       reader.onload = (event) => {
         const content = event.target?.result as string
@@ -66,6 +76,30 @@ export function TemplateGenerator() {
         setError('Failed to read the text file')
       }
       reader.readAsText(selectedFile)
+    }
+  }
+
+  const handleAnalyzeSemantic = async () => {
+    if (!rawText.trim()) {
+      setError('Please provide content text to analyze')
+      return
+    }
+
+    setGeneratingLoading(true)
+    setError(null)
+
+    try {
+      const result = await parseTextSemantics(rawText)
+      setSemanticAnalysis(result)
+      
+      if (result.warnings.length > 0) {
+        setError(`Analysis warnings: ${result.warnings.join(', ')}`)
+      }
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(`Semantic analysis failed: ${apiError.detail || apiError.message}`)
+    } finally {
+      setGeneratingLoading(false)
     }
   }
 
@@ -87,12 +121,9 @@ export function TemplateGenerator() {
     setSuccess(false)
 
     try {
-      const { blob, filename } = await generateFromText(
+      const { blob, filename } = await generateFromTemplate(
+        templateFile,
         rawText,
-        templateFile, // Send template file directly
-        undefined,    // No reference name needed
-        outputFormat,
-        contentFile || undefined,   // Pass the content file if available
         includeFrontmatter ? {
           ...metadata,
           tahun: parseInt(metadata.tahun) || 2024
@@ -105,15 +136,16 @@ export function TemplateGenerator() {
 
       setSuccess(true)
       setResults({
-        filename,
+        message: 'Document generated successfully and downloaded!',
+        filename: filename,
         size: blob.size,
-        timestamp: new Date().toLocaleString(),
-        message: 'Document generated and downloaded successfully',
+        timestamp: new Date().toLocaleString()
       })
 
       // Clear text but keep template
       setRawText('')
       setContentFile(null)
+      setSemanticAnalysis(null)
     } catch (err) {
       const apiError = err as ApiError
       setError(apiError.detail || apiError.message || 'Failed to generate document')
@@ -261,19 +293,149 @@ export function TemplateGenerator() {
               </div>
             </div>
 
-            {/* Output Format */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium">Output Format</label>
-              <select
-                value={outputFormat}
-                onChange={(e) => setOutputFormat(e.target.value as 'docx' | 'doc')}
-                disabled={generatingLoading}
-                className="w-full p-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:bg-slate-50"
-              >
-                <option value="docx">DOCX (Modern)</option>
-                <option value="doc">DOC (Legacy)</option>
-              </select>
-            </div>
+            {/* AI Semantic Analysis */}
+            {rawText.trim() && (
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  onClick={handleAnalyzeSemantic}
+                  disabled={generatingLoading}
+                  variant="outline"
+                  className="w-full"
+                >
+                  {generatingLoading ? 'Analyzing...' : 'AI: Analyze Structure'}
+                </Button>
+                {semanticAnalysis && (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-md text-sm">
+                    <p className="font-semibold text-blue-900">Structure Analysis</p>
+                    <p className="text-blue-800">Found {semanticAnalysis.elements.length} elements</p>
+                    <p className="text-blue-800">Confidence: {(semanticAnalysis.overall_confidence * 100).toFixed(0)}%</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Template Info */}
+            {templateMetadata && (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-md text-sm">
+                <p className="font-semibold text-slate-900">Template Info</p>
+                <p className="text-slate-700">File: {templateMetadata.filename}</p>
+                {templateMetadata.styles && (
+                  <p className="text-slate-700">Styles: {Object.keys(templateMetadata.styles).length}</p>
+                )}
+                {templateMetadata.margins && (
+                  <p className="text-slate-700">Margins configured: Yes</p>
+                )}
+              </div>
+            )}
+
+            {/* Detailed Semantic Analysis Results */}
+            {semanticAnalysis && (
+              <div className="border border-blue-200 rounded-md p-3 bg-blue-50 space-y-2">
+                <h4 className="font-semibold text-blue-900">Semantic Elements Found</h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {semanticAnalysis.elements.slice(0, 10).map((element, idx) => (
+                    <div key={idx} className="text-xs bg-white p-2 rounded border border-blue-100">
+                      <div className="flex justify-between items-start">
+                        <span className="font-mono text-blue-700">{element.type}</span>
+                        <span className={`px-2 py-0.5 rounded text-white text-xs font-medium ${
+                          element.confidence > 0.8 ? 'bg-green-500' :
+                          element.confidence > 0.6 ? 'bg-yellow-500' : 'bg-red-500'
+                        }`}>
+                          {(element.confidence * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <p className="text-slate-600 truncate">{element.text.substring(0, 60)}...</p>
+                    </div>
+                  ))}
+                  {semanticAnalysis.elements.length > 10 && (
+                    <p className="text-xs text-slate-500">... and {semanticAnalysis.elements.length - 10} more</p>
+                  )}
+                </div>
+                {semanticAnalysis.warnings.length > 0 && (
+                  <div className="text-xs text-orange-700 bg-orange-50 p-2 rounded">
+                    <p className="font-medium">⚠ Warnings:</p>
+                    <ul className="list-disc list-inside">
+                      {semanticAnalysis.warnings.map((w, idx) => (
+                        <li key={idx}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* AI Helper Buttons */}
+            {rawText.trim() && (
+              <div className="space-y-2 p-3 bg-amber-50 border border-amber-200 rounded-md">
+                <p className="text-sm font-semibold text-amber-900">AI Text Generators</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const result = await generateAbstractId({
+                          title: metadata.judul,
+                          objectives: 'Extract from content',
+                          methods: 'Extract from content',
+                          results: 'Extract from content'
+                        })
+                        setMetadata({ ...metadata, abstrak_teks: result.abstract })
+                        setSuccess(true)
+                      } catch (err) {
+                        setError('Failed to generate abstract')
+                      }
+                    }}
+                    disabled={generatingLoading}
+                  >
+                    Abstract ID
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const result = await generateAbstractEn({
+                          title: metadata.judul,
+                          objectives: 'Extract from content',
+                          methods: 'Extract from content',
+                          results: 'Extract from content'
+                        })
+                        setMetadata({ ...metadata, abstrak_en_teks: result.abstract })
+                        setSuccess(true)
+                      } catch (err) {
+                        setError('Failed to generate abstract')
+                      }
+                    }}
+                    disabled={generatingLoading}
+                  >
+                    Abstract EN
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const result = await generatePreface({
+                          title: metadata.judul,
+                          author: metadata.penulis,
+                          institution: metadata.universitas,
+                          thesis_focus: 'Extract from content'
+                        })
+                        setMetadata({ ...metadata, preface: result.preface })
+                        setSuccess(true)
+                      } catch (err) {
+                        setError('Failed to generate preface')
+                      }
+                    }}
+                    disabled={generatingLoading}
+                  >
+                    Preface
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <Button
               type="submit"

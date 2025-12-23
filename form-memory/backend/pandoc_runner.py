@@ -1,8 +1,6 @@
 import subprocess
 from pathlib import Path
 from docx import Document
-from skripsi_formatter import enforce_skripsi_format
-from skripsi_enforcer import SkripsiEnforcer
 import shutil
 
 
@@ -41,28 +39,6 @@ def markdown_to_docx(md_path, ref_path, output_path, style_config=None, frontmat
     except Exception as e:
         print(f"ERROR: Generated document is corrupted: {str(e)}")
         raise RuntimeError(f"Generated document is corrupted: {str(e)}")
-
-    # Step 3: Apply formatting (skip if it causes issues)
-    try:
-        print("Applying formatting...")
-        # Only call skripsi_format - skip TOC insertion as it can corrupt
-        enforce_skripsi_format(str(out_path), style_config)
-        print("✓ Formatting applied")
-    except Exception as e:
-        print(f"Warning: Could not apply formatting: {e}")
-        # Don't fail - the document is still usable without perfect formatting
-
-    # Step 4: Generate Front Matter if requested
-    if frontmatter_data:
-        try:
-            print("Generating front matter...")
-            enforcer = SkripsiEnforcer(str(out_path))
-            enforcer.execute_phase_4(**frontmatter_data)
-            enforcer.save()
-            print("✓ Front matter added")
-        except Exception as e:
-            print(f"Warning: Could not add front matter: {e}")
-            # Don't fail - the document is still usable without front matter
 
     # Final verification
     if not Path(output_path).exists():
