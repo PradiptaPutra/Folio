@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { StepIndicator } from '@/components/StepIndicator'
 import { ProcessingView } from '@/components/ProcessingView'
 import { SuccessView } from '@/components/SuccessView'
+import { ContentStructureVisualizer } from '@/components/ContentStructureVisualizer'
 
 import { generateFromTemplate, downloadFile, validateTemplate, previewGeneratedDocument, downloadGeneratedDocument, type ApiError } from '@/lib/api'
 import { Upload, Eye, FileText } from 'lucide-react'
@@ -46,7 +47,45 @@ export function TemplateGenerator() {
 
   // Preview State
   const [previewContent, setPreviewContent] = useState<string>('')
-  const [showEditor, setShowEditor] = useState(false)
+
+  // Content Analysis State
+  const [contentAnalysis, setContentAnalysis] = useState<{
+    sections: any[]
+    wordCount: number
+    aiConfidence: number
+    missingSections: string[]
+  } | null>(null)
+
+  // Content Analysis
+  const analyzeContent = () => {
+    // Simulate content analysis (in real implementation, this would call backend)
+    const sections = [
+      {
+        title: "BAB I: PENDAHULUAN",
+        content: ["This is the introduction section"],
+        level: 1,
+        type: "chapter",
+        confidence: 0.95
+      },
+      {
+        title: "BAB II: TINJAUAN PUSTAKA",
+        content: ["This is the literature review section"],
+        level: 1,
+        type: "chapter",
+        confidence: 0.92
+      }
+    ]
+
+    const wordCount = rawText.split(' ').length
+    const missingSections = ["BAB III: METODE PENELITIAN", "BAB IV: HASIL DAN PEMBAHASAN", "BAB V: KESIMPULAN"]
+
+    setContentAnalysis({
+      sections,
+      wordCount,
+      aiConfidence: 0.87,
+      missingSections
+    })
+  }
 
   // Event Handlers
   const handleInputChange = (field: string, value: string) => {
@@ -102,6 +141,8 @@ export function TemplateGenerator() {
     setRawText(text)
     // Don't clear the contentFile, keep both options available
     setError(null)
+    // Analyze content structure
+    analyzeContent()
   }
 
   const handleNextStep = () => {
@@ -414,6 +455,18 @@ BAB II: LITERATURE REVIEW
               </div>
             )}
 
+            {/* Content Structure Analysis */}
+            {contentAnalysis && (
+              <div className="mt-6">
+                <ContentStructureVisualizer
+                  sections={contentAnalysis.sections}
+                  totalWordCount={contentAnalysis.wordCount}
+                  aiConfidence={contentAnalysis.aiConfidence}
+                  missingSections={contentAnalysis.missingSections}
+                />
+              </div>
+            )}
+
             {/* Navigation */}
             <div className="flex gap-3">
               <Button
@@ -436,21 +489,7 @@ BAB II: LITERATURE REVIEW
       )}
 
       {/* Step 3: Details Form */}
-      {/* Document Editor (shown after generation) */}
-      {showEditor && (
-        <DocumentEditor
-          initialContent={previewContent}
-          onSave={(content) => {
-            setPreviewContent(content)
-            setShowEditor(false)
-          }}
-          onPreview={() => {
-            // Preview is handled within the component
-          }}
-          onBack={() => setShowEditor(false)}
-          title="Edit Generated Document"
-        />
-      )}
+
 
       {currentStep === 2 && (
         <Card>

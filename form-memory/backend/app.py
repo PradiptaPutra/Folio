@@ -777,7 +777,7 @@ async def save_edited_content(content: str = Form(...)):
 @app.get("/preview-generated/{filename}")
 async def preview_generated_document(filename: str):
     """
-    Generate HTML preview of a generated document.
+    Generate enhanced HTML preview of a generated document.
     """
     try:
         # Find the generated file
@@ -787,45 +787,34 @@ async def preview_generated_document(filename: str):
         if not docx_file.exists():
             raise HTTPException(status_code=404, detail="Generated document not found")
 
-        # Extract text content from DOCX for preview
-        from docx import Document
+        # Use enhanced preview service
+        from engine.analyzer.enhanced_preview_service import generate_enhanced_preview
 
-        doc = Document(str(docx_file))
-        html_content = "<!DOCTYPE html>\n<html>\n<head>\n"
-        html_content += "<meta charset='utf-8'>\n"
-        html_content += "<title>Document Preview</title>\n"
-        html_content += "<style>\n"
-        html_content += "body { font-family: 'Times New Roman', serif; margin: 40px; line-height: 1.6; }\n"
-        html_content += ".heading1 { font-size: 16pt; font-weight: bold; margin: 20px 0 10px 0; }\n"
-        html_content += ".heading2 { font-size: 14pt; font-weight: bold; margin: 15px 0 8px 0; }\n"
-        html_content += ".normal { margin: 8px 0; text-align: justify; text-indent: 1cm; }\n"
-        html_content += ".center { text-align: center; }\n"
-        html_content += ".page-break { page-break-before: always; }\n"
-        html_content += "</style>\n"
-        html_content += "</head>\n<body>\n"
+        result = generate_enhanced_preview(str(docx_file))
 
-        for para in doc.paragraphs:
-            if para.text.strip():
-                # Determine style class based on paragraph style
-                style_class = "normal"
-                if para.style:
-                    style_name = para.style.name.lower()
-                    if "heading 1" in style_name:
-                        style_class = "heading1"
-                    elif "heading 2" in style_name:
-                        style_class = "heading2"
-                    elif "center" in style_name or para.alignment == 1:  # WD_ALIGN_PARAGRAPH.CENTER = 1
-                        style_class = "center"
+        if result["status"] == "error":
+            raise HTTPException(status_code=500, detail=result["message"])
 
-                # Escape HTML and add paragraph
-                text = para.text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                html_content += f"<p class='{style_class}'>{text}</p>\n"
-
-        html_content += "</body>\n</html>"
+        # Combine CSS and HTML
+        full_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Document Preview - {filename}</title>
+    <style>
+{result["css_styles"]}
+    </style>
+</head>
+<body>
+{result["html_content"]}
+</body>
+</html>"""
 
         return {
             "status": "success",
-            "html_content": html_content
+            "html_content": full_html,
+            "metadata": result.get("metadata", {}),
+            "filename": filename
         }
 
     except Exception as e:

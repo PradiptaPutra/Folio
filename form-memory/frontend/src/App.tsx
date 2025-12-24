@@ -4,6 +4,8 @@ import { DocumentUploader } from '@/components/DocumentUploader'
 import { StatusPage } from '@/components/StatusPage'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
+import { DocumentIllustration } from '@/components/DocumentIllustration'
+import { FeatureCard } from '@/components/FeatureCard'
 
 type Page = 'home' | 'generate' | 'enforce' | 'status'
 
@@ -91,13 +93,8 @@ function App() {
                   </div>
                 </div>
 
-                {/* Right side illustration */}
-                <div className="relative h-96 hidden lg:block">
-                  <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-accent/10 rounded-lg" />
-                  <div className="absolute top-8 right-8 w-48 h-64 bg-card border border-border rounded shadow-card transform rotate-3" />
-                  <div className="absolute top-16 right-24 w-48 h-64 bg-card border border-border rounded shadow-lg-card" />
-                  <div className="absolute top-24 right-40 w-48 h-64 bg-card border border-border rounded shadow-card transform -rotate-3" />
-                </div>
+                 {/* Right side illustration */}
+                 <DocumentIllustration />
               </div>
             </section>
 
@@ -121,15 +118,9 @@ function App() {
                     title: 'Perfect Formatting',
                     description: 'Applies consistent formatting while preserving all styles and document integrity'
                   }
-                ].map((feature, idx) => (
-                  <div key={idx} className="relative animate-fade-in-up" style={{ animationDelay: `${idx * 100}ms` }}>
-                    <div className="step-number">{feature.number}</div>
-                    <div className="document-preview p-6 space-y-3">
-                      <h3 className="font-semibold">{feature.title}</h3>
-                      <p className="text-sm text-muted-foreground">{feature.description}</p>
-                    </div>
-                  </div>
-                ))}
+                 ].map((feature, idx) => (
+                   <FeatureCard key={idx} number={feature.number} title={feature.title} description={feature.description} animationDelay={`${idx * 100}ms`} />
+                 ))}
               </div>
             </section>
 

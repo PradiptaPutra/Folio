@@ -3,5 +3,8 @@ uvicorn
 lxml
 python-multipart
 python-docx
+docxtpl
 python-dotenv
 openai
+mammoth
+pypandoc

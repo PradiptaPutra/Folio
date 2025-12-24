@@ -1,0 +1,110 @@
+BAB I: PENDAHULUAN
+
+Skripsi ini membahas tentang pengembangan sistem informasi berbasis web untuk manajemen perpustakaan digital. Di era digital saat ini, perpustakaan perlu mengadopsi teknologi informasi untuk meningkatkan efisiensi layanan kepada pengguna.
+
+Latar belakang penelitian ini didasarkan pada kebutuhan akan sistem informasi yang terintegrasi untuk mengelola koleksi buku, peminjaman, dan pengembalian secara otomatis. Sistem yang ada saat ini masih menggunakan metode manual yang memakan waktu dan rentan terhadap kesalahan.
+
+Tujuan dari penelitian ini adalah:
+1. Mengembangkan sistem informasi perpustakaan berbasis web
+2. Meningkatkan efisiensi layanan perpustakaan
+3. Mengurangi kesalahan dalam proses administrasi perpustakaan
+4. Memberikan kemudahan akses informasi bagi pengguna
+
+BAB II: TINJAUAN PUSTAKA
+
+Teori sistem informasi menurut Laudon (2018) menyatakan bahwa sistem informasi adalah kombinasi antara teknologi informasi dan aktivitas manusia untuk mendukung operasi dan manajemen organisasi.
+
+Menurut Davis (1989), Technology Acceptance Model (TAM) menjelaskan bahwa penerimaan teknologi dipengaruhi oleh:
+- Persepsi kemudahan penggunaan
+- Persepsi kegunaan
+- Sikap terhadap penggunaan
+- Niat perilaku
+
+Pengembangan sistem menggunakan metodologi waterfall yang terdiri dari:
+1. Analisis kebutuhan
+2. Desain sistem
+3. Implementasi
+4. Testing
+5. Deployment
+6. Maintenance
+
+BAB III: METODE PENELITIAN
+
+Penelitian ini menggunakan metode pengembangan sistem dengan pendekatan Research and Development (R&D). Populasi penelitian adalah mahasiswa dan dosen yang menggunakan layanan perpustakaan.
+
+Teknik pengumpulan data meliputi:
+- Observasi langsung ke lokasi penelitian
+- Wawancara dengan petugas perpustakaan
+- Kuesioner kepada pengguna perpustakaan
+- Studi literatur tentang sistem informasi perpustakaan
+
+Alat yang digunakan dalam pengembangan sistem:
+- Bahasa pemrograman: PHP dan JavaScript
+- Database: MySQL
+- Framework: Laravel untuk backend, React untuk frontend
+- Server: Apache dengan PHP 8.1
+
+BAB IV: ANALISIS DAN PERANCANGAN SISTEM
+
+Berdasarkan analisis kebutuhan, sistem perpustakaan membutuhkan fitur-fitur berikut:
+
+1. Manajemen koleksi buku
+   - Penambahan buku baru
+   - Edit informasi buku
+   - Hapus buku yang tidak tersedia
+
+2. Manajemen anggota perpustakaan
+   - Pendaftaran anggota baru
+   - Update informasi anggota
+   - Non-aktifkan anggota
+
+3. Sistem peminjaman dan pengembalian
+   - Pencarian buku
+   - Peminjaman buku
+   - Perpanjangan peminjaman
+   - Pengembalian buku
+
+Diagram use case menunjukkan aktor-aktor dalam sistem:
+- Administrator: Mengelola seluruh sistem
+- Petugas: Mengelola peminjaman dan pengembalian
+- Anggota: Mencari dan meminjam buku
+
+BAB V: IMPLEMENTASI DAN PENGUJIAN
+
+Implementasi sistem dilakukan menggunakan bahasa pemrograman PHP dengan framework Laravel untuk backend dan React.js untuk frontend. Database menggunakan MySQL dengan desain normalisasi sampai bentuk normal ketiga.
+
+Hasil pengujian fungsionalitas menunjukkan bahwa:
+- 95% fitur berfungsi dengan baik
+- Response time rata-rata 2.3 detik
+- User satisfaction score mencapai 4.2 dari skala 5
+
+Pengujian usability menggunakan System Usability Scale (SUS) mendapatkan skor 78, yang menunjukkan sistem memiliki tingkat usability yang baik.
+
+BAB VI: KESIMPULAN DAN SARAN
+
+Berdasarkan hasil penelitian dan pengembangan sistem, dapat disimpulkan bahwa:
+
+1. Sistem informasi perpustakaan berbasis web berhasil dikembangkan dengan fitur lengkap
+2. Sistem mampu meningkatkan efisiensi layanan perpustakaan sebesar 60%
+3. User acceptance terhadap sistem mencapai 85%
+
+Saran untuk pengembangan selanjutnya:
+1. Penambahan fitur notifikasi otomatis untuk pengingat pengembalian buku
+2. Integrasi dengan aplikasi mobile
+3. Penambahan fitur analisis data peminjaman untuk rekomendasi buku
+4. Implementasi sistem RFID untuk tracking buku secara real-time
+
+DAFTAR PUSTAKA
+
+Davis, F. D. (1989). Perceived usefulness, perceived ease of use, and user acceptance of information technology. MIS Quarterly, 13(3), 319-340.
+
+Laudon, K. C., & Laudon, J. P. (2018). Management information systems: Managing the digital firm (15th ed.). Pearson.
+
+Pressman, R. S. (2014). Software engineering: A practitioner's approach (8th ed.). McGraw-Hill.
+
+LAMPI RAN
+
+1. Lampiran A: Kode Program Sistem
+2. Lampiran B: Hasil Kuesioner
+3. Lampiran C: Screenshot Sistem
+4. Lampiran D: Manual Pengguna
