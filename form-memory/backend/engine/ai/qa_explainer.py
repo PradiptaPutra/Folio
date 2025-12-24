@@ -69,7 +69,7 @@ OUTPUT FORMAT:
             prompt = self._build_diff_prompt(diffs)
             
             response = self.client.chat.completions.create(
-                model="openai/gpt-4o:extended",
+                model="openai/gpt-oss-20b:free",
                 messages=[
                     {
                         "role": "system",
@@ -81,6 +81,7 @@ OUTPUT FORMAT:
                     }
                 ],
                 temperature=0.3,
+                extra_body={"reasoning": {"enabled": True}}
             )
             
             content = response.choices[0].message.content
@@ -119,7 +120,7 @@ MODIFIED:
 Berikan penjelasan singkat dalam format JSON."""
             
             response = self.client.chat.completions.create(
-                model="openai/gpt-4o:extended",
+                model="openai/gpt-oss-20b:free",
                 messages=[
                     {
                         "role": "user",
@@ -127,6 +128,7 @@ Berikan penjelasan singkat dalam format JSON."""
                     }
                 ],
                 temperature=0.2,
+                extra_body={"reasoning": {"enabled": True}}
             )
             
             content = response.choices[0].message.content

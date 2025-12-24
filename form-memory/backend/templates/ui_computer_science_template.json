@@ -1,0 +1,380 @@
+{
+  "metadata": {
+    "university": "UI",
+    "faculty": "FIB",
+    "program": "Ilmu Komputer",
+    "version": "2024.1",
+    "standard": "SK_MENDIKBUD_2020",
+    "description": "Universitas Indonesia Faculty of Humanities Computer Science Program Template"
+  },
+  "document_properties": {
+    "page_size": {
+      "width": 8.27,
+      "height": 11.69
+    },
+    "margins": {
+      "top": 1.0,
+      "bottom": 1.0,
+      "left": 1.25,
+      "right": 1.0
+    },
+    "orientation": "portrait",
+    "gutter": 0
+  },
+  "typography": {
+    "fonts": {
+      "primary": "Times New Roman",
+      "secondary": "Arial",
+      "monospace": "Courier New"
+    },
+    "sizes": {
+      "title": 16,
+      "chapter": 14,
+      "section": 12,
+      "subsection": 12,
+      "body": 12,
+      "caption": 11,
+      "footnote": 10
+    },
+    "line_spacing": 1.5,
+    "paragraph_spacing": {
+      "before": 0,
+      "after": 0
+    },
+    "indentation": {
+      "first_line": 1.25,
+      "hanging": 0
+    }
+  },
+  "structure": {
+    "front_matter": [
+      {
+        "type": "title_page",
+        "required": true,
+        "style": "TitlePage",
+        "order": 1,
+        "content_template": "UI standard title page format"
+      },
+      {
+        "type": "approval_page",
+        "required": true,
+        "style": "ApprovalPage",
+        "order": 2,
+        "content_template": "Supervisor and examiner approval format"
+      },
+      {
+        "type": "originality_statement",
+        "required": true,
+        "style": "StatementPage",
+        "order": 3,
+        "content_template": "UI originality declaration"
+      },
+      {
+        "type": "preface",
+        "required": true,
+        "style": "PrefacePage",
+        "order": 4,
+        "content_template": "Personal acknowledgment and purpose"
+      },
+      {
+        "type": "abstract_id",
+        "required": true,
+        "style": "AbstractPage",
+        "order": 5,
+        "content_template": "Indonesian abstract 150-250 words"
+      },
+      {
+        "type": "abstract_en",
+        "required": true,
+        "style": "AbstractPage",
+        "order": 6,
+        "content_template": "English abstract 150-250 words"
+      },
+      {
+        "type": "table_of_contents",
+        "required": true,
+        "style": "TOCPage",
+        "order": 7,
+        "auto_generate": true
+      },
+      {
+        "type": "list_of_tables",
+        "required": false,
+        "style": "ListPage",
+        "order": 8,
+        "auto_generate": true
+      },
+      {
+        "type": "list_of_figures",
+        "required": false,
+        "style": "ListPage",
+        "order": 9,
+        "auto_generate": true
+      }
+    ],
+    "main_content": {
+      "chapter_pattern": "^BAB\\s+[IVX]+\\s*[:-]?\\s*(.+)",
+      "section_pattern": "^([0-9]+\\.[0-9]+)\\s+(.+)",
+      "subsection_pattern": "^([0-9]+\\.[0-9]+\\.[0-9]+)\\s+(.+)",
+      "heading_styles": {
+        "level_1": {
+          "font": "Times New Roman",
+          "size": 14,
+          "bold": true,
+          "alignment": "left",
+          "spacing_before": 24,
+          "spacing_after": 12,
+          "page_break_before": true,
+          "numbering": "BAB {ROMAN} - "
+        },
+        "level_2": {
+          "font": "Times New Roman",
+          "size": 12,
+          "bold": true,
+          "alignment": "left",
+          "spacing_before": 12,
+          "spacing_after": 6,
+          "numbering": "{decimal} "
+        },
+        "level_3": {
+          "font": "Times New Roman",
+          "size": 12,
+          "bold": false,
+          "italic": true,
+          "alignment": "left",
+          "spacing_before": 6,
+          "spacing_after": 3,
+          "numbering": "{decimal}.{decimal} "
+        }
+      },
+      "required_chapters": [
+        "BAB I PENDAHULUAN",
+        "BAB II TINJAUAN PUSTAKA",
+        "BAB III METODOLOGI",
+        "BAB IV HASIL DAN PEMBAHASAN",
+        "BAB V KESIMPULAN"
+      ]
+    },
+    "back_matter": [
+      {
+        "type": "references",
+        "required": true,
+        "style": "ReferencesPage",
+        "order": 1,
+        "format": "APA"
+      },
+      {
+        "type": "appendices",
+        "required": false,
+        "style": "AppendixPage",
+        "order": 2
+      },
+      {
+        "type": "index",
+        "required": false,
+        "style": "IndexPage",
+        "order": 3,
+        "auto_generate": true
+      }
+    ]
+  },
+  "styles": {
+    "paragraph_styles": {
+      "Normal": {
+        "font": "Times New Roman",
+        "size": 12,
+        "bold": false,
+        "italic": false,
+        "alignment": "justify",
+        "line_spacing": 1.5,
+        "indentation": {
+          "first_line": 1.25,
+          "left": 0,
+          "right": 0
+        },
+        "spacing": {
+          "before": 0,
+          "after": 0
+        }
+      },
+      "TitlePage": {
+        "font": "Times New Roman",
+        "size": 16,
+        "bold": true,
+        "italic": false,
+        "alignment": "center",
+        "line_spacing": 1.0,
+        "indentation": {
+          "first_line": 0,
+          "left": 0,
+          "right": 0
+        }
+      },
+      "Heading1": {
+        "font": "Times New Roman",
+        "size": 14,
+        "bold": true,
+        "alignment": "left",
+        "line_spacing": 1.2,
+        "spacing": {
+          "before": 24,
+          "after": 12
+        },
+        "page_break_before": true
+      },
+      "Heading2": {
+        "font": "Times New Roman",
+        "size": 12,
+        "bold": true,
+        "alignment": "left",
+        "line_spacing": 1.2,
+        "spacing": {
+          "before": 12,
+          "after": 6
+        }
+      }
+    },
+    "character_styles": {
+      "Emphasis": {
+        "font": "Times New Roman",
+        "size": 12,
+        "bold": false,
+        "italic": true
+      },
+      "Strong": {
+        "font": "Times New Roman",
+        "size": 12,
+        "bold": true,
+        "italic": false
+      }
+    }
+  },
+  "numbering": {
+    "chapters": {
+      "format": "roman_upper",
+      "prefix": "BAB ",
+      "suffix": " - ",
+      "start_number": 1
+    },
+    "sections": {
+      "format": "decimal",
+      "separator": ".",
+      "max_levels": 3
+    },
+    "figures": {
+      "format": "decimal",
+      "prefix": "Gambar ",
+      "separator": "."
+    },
+    "tables": {
+      "format": "decimal",
+      "prefix": "Tabel ",
+      "separator": "."
+    },
+    "equations": {
+      "format": "decimal",
+      "prefix": "(",
+      "suffix": ")"
+    }
+  },
+  "citations": {
+    "style": "APA",
+    "in_text_format": "(Author, Year)",
+    "bibliography_format": "Author. (Year). Title. Publisher.",
+    "sort_order": "alphabetical",
+    "hanging_indent": 1.0
+  },
+  "validation_rules": {
+    "required_sections": [
+      "title_page",
+      "approval_page",
+      "originality_statement",
+      "preface",
+      "abstract_id",
+      "abstract_en",
+      "table_of_contents",
+      "bab_i",
+      "bab_ii",
+      "bab_iii",
+      "bab_iv",
+      "bab_v",
+      "references"
+    ],
+    "font_restrictions": [
+      "Times New Roman",
+      "Arial",
+      "Calibri",
+      "Bookman Old Style"
+    ],
+    "size_limits": {
+      "min_body_size": 11,
+      "max_body_size": 12,
+      "min_title_size": 14,
+      "max_title_size": 18
+    },
+    "margin_requirements": {
+      "min_left_margin": 1.0,
+      "max_left_margin": 1.5,
+      "min_top_margin": 1.0,
+      "max_top_margin": 1.5,
+      "min_bottom_margin": 1.0,
+      "max_bottom_margin": 1.5,
+      "min_right_margin": 1.0,
+      "max_right_margin": 1.5
+    },
+    "spacing_requirements": {
+      "line_spacing": {
+        "min": 1.4,
+        "max": 1.6
+      },
+      "paragraph_spacing": {
+        "max_before": 6,
+        "max_after": 6
+      }
+    },
+    "structure_requirements": {
+      "max_heading_levels": 3,
+      "min_chapters": 5,
+      "max_chapters": 7,
+      "require_conclusion": true,
+      "require_references": true
+    }
+  },
+  "auto_generation": {
+    "table_of_contents": {
+      "enabled": true,
+      "max_levels": 3,
+      "include_page_numbers": true,
+      "format": "standard"
+    },
+    "list_of_tables": {
+      "enabled": true,
+      "format": "standard"
+    },
+    "list_of_figures": {
+      "enabled": true,
+      "format": "standard"
+    },
+    "preface": {
+      "enabled": true,
+      "template": "academic_preface_template",
+      "personalization_fields": [
+        "author_name",
+        "supervisor_name",
+        "research_title",
+        "completion_date"
+      ]
+    },
+    "abstract": {
+      "enabled": true,
+      "word_limit": 250,
+      "required_sections": [
+        "background",
+        "objectives",
+        "methods",
+        "results",
+        "conclusion"
+      ]
+    }
+  }
+}

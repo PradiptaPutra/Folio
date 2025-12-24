@@ -37,17 +37,18 @@ class SectionType(str, Enum):
 class AIEnhancedContentExtractor:
     """Extracts content using AI semantic analysis when available."""
     
-    def __init__(self, content_path: str, use_ai: bool = True):
+    def __init__(self, content_path: str, use_ai: bool = True, api_key: Optional[str] = None):
         """Initialize with content file.
-        
+
         Args:
             content_path: Path to DOCX or TXT file
-        use_ai: Whether to use AI semantic analysis (if available)
+            use_ai: Whether to use AI semantic analysis (if available)
+            api_key: OpenRouter API key for AI features
         """
         self.content_path = Path(content_path)
         self.is_docx = self.content_path.suffix.lower() == '.docx'
-        self.use_ai = use_ai and AI_AVAILABLE
-        self.semantic_parser = SemanticParser() if self.use_ai else None
+        self.use_ai = use_ai and AI_AVAILABLE and api_key is not None
+        self.semantic_parser = SemanticParser(api_key=api_key) if self.use_ai else None
         
         # Load content - keep ContentExtractor object separately
         self._content_extractor = ContentExtractor(str(self.content_path))

@@ -65,8 +65,11 @@ OUTPUT FORMAT:
 }"""
     
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
-        """Initialize with OpenAI."""
-        self.client = OpenAI(api_key=api_key)
+        """Initialize with OpenRouter."""
+        self.client = OpenAI(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
     
     def classify(self, blocks: List[str]) -> List[Dict[str, Any]]:
         """Classify list of front matter blocks."""
@@ -80,7 +83,7 @@ OUTPUT FORMAT:
             )
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="openai/gpt-oss-20b:free",
                 messages=[
                     {
                         "role": "system",
@@ -92,6 +95,7 @@ OUTPUT FORMAT:
                     }
                 ],
                 temperature=0.2,
+                extra_body={"reasoning": {"enabled": True}}
             )
             
             content = response.choices[0].message.content

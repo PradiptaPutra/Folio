@@ -77,7 +77,14 @@ class TemplateExecutor:
         anchor = self._find_anchor(rule)
         
         if anchor is None:
-            raise ValueError(f"Anchor not found for section: {section_key}")
+            # Fallback: try to locate anchor by a textual hint from rule
+            fallback_text = rule.get('fallback_text') if isinstance(rule, dict) else None
+            if fallback_text:
+                anchor = self.anchor_discovery.find_paragraph_containing_text(fallback_text)
+            if anchor is None:
+                # As a last resort, skip the section gracefully
+                print(f"Warning: Anchor not found for section: {section_key}; skipping injection.")
+                return
         
         if isinstance(content, str):
             self._inject_text(anchor, content)
@@ -85,6 +92,7 @@ class TemplateExecutor:
             self._inject_list(anchor, content)
         elif isinstance(content, dict):
             self._inject_dict(anchor, content)
+
     
     def _find_anchor(self, rule: Dict[str, Any]) -> Optional[int]:
         """Find paragraph index matching rule criteria."""

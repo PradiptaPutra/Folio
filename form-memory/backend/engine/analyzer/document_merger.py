@@ -35,6 +35,7 @@ class DocumentMerger:
         
         # Create a fresh document for complete thesis structure
         doc = Document()
+        self._apply_section_properties(doc)
         
         # Step 1: Add front matter (title page, approval, abstract, etc.)
         self._add_front_matter(doc, user_data)
@@ -99,6 +100,9 @@ class DocumentMerger:
                 heading_run = heading_para.runs[0]
                 heading_run.font.bold = True
                 heading_run.font.size = Pt(12)
+                # Page break before new chapter except first
+                if len(doc.paragraphs) > 1:
+                    doc.add_page_break()
             
             # Add section content
             for line in content:
@@ -108,6 +112,13 @@ class DocumentMerger:
                     # Set indentation
                     para.paragraph_format.left_indent = Inches(0.0)
                     para.paragraph_format.first_line_indent = Inches(1.0)
+
+            # Insert lists if present
+            for lst in section.get("lists", []):
+                style_name = "List Number" if lst.get("ordered") else "List Bullet"
+                for item in lst.get("items", []):
+                    para = doc.add_paragraph(item)
+                    para.style = style_name
     
     def _add_back_matter(self, doc: Document, user_data: Dict[str, Any]) -> None:
         """Add all back matter (references, appendices, etc.)."""
@@ -127,6 +138,26 @@ class DocumentMerger:
         appendices = user_data.get("appendices", [])
         if appendices:
             generator.create_appendices(doc, appendices)
+
+    def _apply_section_properties(self, doc: Document) -> None:
+        """Apply sectPr properties from template analyzer to the new document."""
+        try:
+            src = self.template.doc.sections[0]
+            dst = doc.sections[0]
+            # Margins
+            dst.top_margin = src.top_margin
+            dst.bottom_margin = src.bottom_margin
+            dst.left_margin = src.left_margin
+            dst.right_margin = src.right_margin
+            # Page size
+            dst.page_height = src.page_height
+            dst.page_width = src.page_width
+            # Different first page
+            dst.different_first_page_header_footer = src.different_first_page_header_footer
+            # Columns (approximate via width; python-docx lacks direct column API)
+            # Note: full column support requires OXML manipulation; omitted for safety.
+        except Exception:
+            pass
     
     def _replace_placeholders(self, user_data: Dict[str, Any]) -> None:
         """Replace template placeholders with user data or content."""

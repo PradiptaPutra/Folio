@@ -104,6 +104,71 @@ export interface FrontmatterData {
   kata_kunci?: string
 }
 
+export interface TemplateAnalysis {
+  metadata: {
+    university: string
+    faculty?: string
+    program?: string
+    version: string
+    standard: string
+    converted_from?: string
+    source_file?: string
+  }
+  document_properties: {
+    page_size: { width: number; height: number }
+    margins: { top: number; bottom: number; left: number; right: number }
+    orientation: string
+  }
+  typography: {
+    fonts: { primary: string; secondary?: string; monospace?: string }
+    sizes: Record<string, number>
+    line_spacing: number
+    indentation: { first_line: number; hanging?: number }
+  }
+  structure: {
+    front_matter: Array<{ type: string; required: boolean; order?: number }>
+    main_content: {
+      chapter_pattern: string
+      heading_styles: Record<string, any>
+    }
+    back_matter: Array<{ type: string; required: boolean }>
+  }
+  validation_rules: {
+    required_sections: string[]
+    font_restrictions: string[]
+    size_limits: Record<string, number>
+  }
+}
+
+export interface ThesisGenerationOptions {
+  use_ai: boolean
+  include_frontmatter: boolean
+  api_key?: string
+  template_format?: 'docx' | 'json' | 'xml'
+}
+
+export interface ThesisGenerationResponse {
+  status: 'success' | 'error'
+  message: string
+  output_file?: string
+  file_size?: number
+  report?: {
+    template_analysis?: TemplateAnalysis
+    quality_score?: number
+    compliance_score?: number
+    recommendations?: string[]
+  }
+  error_details?: string
+}
+
+export interface TemplateConversionResponse {
+  status: 'success' | 'error'
+  message: string
+  template_data?: TemplateAnalysis
+  output_file?: string
+  analysis_summary?: string
+}
+
 export interface ApiError {
   status: number
   message: string
@@ -709,6 +774,87 @@ export async function saveEditedContent(content: string): Promise<{ content_id: 
     throw {
       status: axiosError.response?.status || 500,
       message: 'Failed to save edited content',
+      detail: axiosError.message,
+    } as ApiError
+  }
+}
+
+/**
+ * Upload and analyze university template for perfect formatting
+ */
+export async function uploadTemplate(templateFile: File): Promise<TemplateAnalysis> {
+  try {
+    const formData = new FormData()
+    formData.append('file', templateFile)
+
+    const response = await apiClient.post<TemplateAnalysis>('/template/analyze', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  } catch (error) {
+    const axiosError = error as AxiosError
+    throw {
+      status: axiosError.response?.status || 500,
+      message: 'Failed to analyze template',
+      detail: axiosError.message,
+    } as ApiError
+  }
+}
+
+/**
+ * Convert DOCX template to structured JSON format
+ */
+export async function convertTemplate(templateFile: File, format: 'json' | 'xml' = 'json'): Promise<TemplateConversionResponse> {
+  try {
+    const formData = new FormData()
+    formData.append('file', templateFile)
+    formData.append('format', format)
+
+    const response = await apiClient.post<TemplateConversionResponse>('/template/convert', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  } catch (error) {
+    const axiosError = error as AxiosError
+    throw {
+      status: axiosError.response?.status || 500,
+      message: 'Failed to convert template',
+      detail: axiosError.message,
+    } as ApiError
+  }
+}
+
+/**
+ * Generate thesis with AI enhancement and perfect template adaptation
+ */
+export async function generatePerfectThesis(
+  templateFile: File,
+  contentFile: File,
+  userData: FrontmatterData,
+  options: ThesisGenerationOptions = { use_ai: true, include_frontmatter: true }
+): Promise<ThesisGenerationResponse> {
+  try {
+    const formData = new FormData()
+    formData.append('template', templateFile)
+    formData.append('content', contentFile)
+    formData.append('user_data', JSON.stringify(userData))
+    formData.append('options', JSON.stringify(options))
+
+    const response = await apiClient.post<ThesisGenerationResponse>('/thesis/generate-perfect', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  } catch (error) {
+    const axiosError = error as AxiosError
+    throw {
+      status: axiosError.response?.status || 500,
+      message: 'Failed to generate perfect thesis',
       detail: axiosError.message,
     } as ApiError
   }

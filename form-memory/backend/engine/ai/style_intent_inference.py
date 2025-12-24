@@ -62,8 +62,11 @@ CONFIDENCE GUIDELINES:
 - < 0.7: Mark as unknown - do not use"""
     
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
-        """Initialize with OpenAI."""
-        self.client = OpenAI(api_key=api_key)
+        """Initialize with OpenRouter."""
+        self.client = OpenAI(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
     
     def infer(self, style_data: Dict[str, Any]) -> Dict[str, Any]:
         """Infer semantic role from style data."""
@@ -71,7 +74,7 @@ CONFIDENCE GUIDELINES:
             prompt = self._build_prompt(style_data)
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="openai/gpt-oss-20b:free",
                 messages=[
                     {
                         "role": "system",
@@ -83,6 +86,7 @@ CONFIDENCE GUIDELINES:
                     }
                 ],
                 temperature=0.2,
+                extra_body={"reasoning": {"enabled": True}}
             )
             
             content = response.choices[0].message.content

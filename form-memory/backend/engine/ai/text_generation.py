@@ -10,7 +10,7 @@ from openai import OpenAI
 
 class AbstractGenerator:
     """Generate abstract sections."""
-    
+
     SYSTEM_PROMPT = """You are an academic writing assistant for Indonesian theses.
 
 Your task: Generate abstract text in plain language (no formatting).
@@ -21,10 +21,13 @@ RULES:
 3. Academic tone
 4. Concise (100-150 words)
 5. Summarize main contribution and findings"""
-    
+
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
-        """Initialize with OpenAI."""
-        self.client = OpenAI(api_key=api_key)
+        """Initialize with OpenRouter."""
+        self.client = OpenAI(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
     
     def generate_abstract_id(
         self,
@@ -44,7 +47,7 @@ Hasil: {results}
 Tulislah dalam 100-150 kata. Hanya teks biasa, tanpa format."""
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="openai/gpt-oss-20b:free",
                 messages=[
                     {
                         "role": "system",
@@ -56,6 +59,7 @@ Tulislah dalam 100-150 kata. Hanya teks biasa, tanpa format."""
                     }
                 ],
                 temperature=0.7,
+                extra_body={"reasoning": {"enabled": True}}
             )
             
             return response.choices[0].message.content
@@ -81,7 +85,7 @@ Results: {results}
 Write in 100-150 words. Plain text only, no formatting."""
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="openai/gpt-oss-20b:free",
                 messages=[
                     {
                         "role": "system",
@@ -93,6 +97,7 @@ Write in 100-150 words. Plain text only, no formatting."""
                     }
                 ],
                 temperature=0.7,
+                extra_body={"reasoning": {"enabled": True}}
             )
             
             return response.choices[0].message.content
@@ -103,7 +108,7 @@ Write in 100-150 words. Plain text only, no formatting."""
 
 class PrefaceGenerator:
     """Generate preface sections."""
-    
+
     SYSTEM_PROMPT = """You are an academic writing assistant for Indonesian theses.
 
 Your task: Generate preface (Kata Pengantar) text.
@@ -115,10 +120,13 @@ RULES:
 4. 200-300 words
 5. Express gratitude, acknowledge contributions
 6. No formatting marks"""
-    
+
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
-        """Initialize with OpenAI."""
-        self.client = OpenAI(api_key=api_key)
+        """Initialize with OpenRouter."""
+        self.client = OpenAI(
+            base_url=base_url or "https://openrouter.ai/api/v1",
+            api_key=api_key,
+        )
     
     def generate_preface(
         self,
@@ -140,7 +148,7 @@ Sertakan ucapan terima kasih dan pengakuan kontribusi.
 Hanya teks biasa, tanpa format."""
             
             response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="openai/gpt-oss-20b:free",
                 messages=[
                     {
                         "role": "system",
@@ -152,6 +160,7 @@ Hanya teks biasa, tanpa format."""
                     }
                 ],
                 temperature=0.7,
+                extra_body={"reasoning": {"enabled": True}}
             )
             
             return response.choices[0].message.content

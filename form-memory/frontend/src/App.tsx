@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { TemplateGenerator } from '@/components/TemplateGenerator'
 import { DocumentUploader } from '@/components/DocumentUploader'
-import { StatusPage } from '@/components/StatusPage'
+import { PerfectThesisGenerator } from '@/components/PerfectThesisGenerator'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
 import { DocumentIllustration } from '@/components/DocumentIllustration'
 import { FeatureCard } from '@/components/FeatureCard'
 
-type Page = 'home' | 'generate' | 'enforce' | 'status'
+type Page = 'home' | 'generate' | 'perfect' | 'enforce'
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('home')
@@ -27,17 +27,17 @@ function App() {
             </div>
           </div>
 
-          <div className="flex gap-1">
-            <button onClick={() => setCurrentPage('home')} className="nav-link px-4 py-2 text-sm">
-              Home
-            </button>
-            <button onClick={() => setCurrentPage('generate')} className="nav-link px-4 py-2 text-sm">
-              Generate
-            </button>
-            <button onClick={() => setCurrentPage('status')} className="nav-link px-4 py-2 text-sm">
-              Status
-            </button>
-          </div>
+            <div className="flex gap-1">
+              <button onClick={() => setCurrentPage('home')} className="nav-link px-4 py-2 text-sm">
+                Home
+              </button>
+              <button onClick={() => setCurrentPage('generate')} className="nav-link px-4 py-2 text-sm">
+                Generate
+              </button>
+              <button onClick={() => setCurrentPage('perfect')} className="nav-link px-4 py-2 text-sm bg-primary text-primary-foreground">
+                Perfect AI
+              </button>
+            </div>
         </div>
       </nav>
 
@@ -102,22 +102,22 @@ function App() {
             <section className="max-w-7xl mx-auto px-6 py-12 border-t border-border">
               <h2 className="text-subheading mb-12">Key Features</h2>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                {[
-                  {
-                    number: '01',
-                    title: 'Template Analysis',
-                    description: 'Automatically detects structure, styles, and formatting rules from any university template'
-                  },
-                  {
-                    number: '02',
-                    title: 'Content Extraction',
-                    description: 'Intelligently extracts and maps your thesis content to the template structure'
-                  },
-                  {
-                    number: '03',
-                    title: 'Perfect Formatting',
-                    description: 'Applies consistent formatting while preserving all styles and document integrity'
-                  }
+                 {[
+                   {
+                     number: '01',
+                     title: 'AI Template Intelligence',
+                     description: 'Deep analysis of any university template with automatic conversion to structured format for instant processing'
+                   },
+                   {
+                     number: '02',
+                     title: 'Content Enhancement AI',
+                     description: 'Academic writing improvement, grammar correction, and quality enhancement using advanced AI models'
+                   },
+                   {
+                     number: '03',
+                     title: 'Perfect Template Matching',
+                     description: 'Pixel-perfect formatting that exactly matches your university template with 100% compliance guarantee'
+                   }
                  ].map((feature, idx) => (
                    <FeatureCard key={idx} number={feature.number} title={feature.title} description={feature.description} animationDelay={`${idx * 100}ms`} />
                  ))}
@@ -127,23 +127,47 @@ function App() {
             {/* How It Works */}
             <section className="max-w-7xl mx-auto px-6 py-12 border-t border-border">
               <h2 className="text-subheading mb-12">How It Works</h2>
-              <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
                 {[
-                  { title: 'Upload Template', desc: 'Select your university\'s thesis template in DOCX format' },
-                  { title: 'Upload Content', desc: 'Provide your thesis content as DOCX or TXT file' },
-                  { title: 'Fill Details', desc: 'Enter your name, title, advisor, and other metadata' },
-                  { title: 'Download', desc: 'Get your perfectly formatted thesis ready for submission' }
+                  {
+                    step: '01',
+                    title: 'Upload Template',
+                    desc: 'Upload your university\'s official thesis template (DOCX format)'
+                  },
+                  {
+                    step: '02',
+                    title: 'Upload Content',
+                    desc: 'Add your raw thesis content (DOCX or TXT format)'
+                  },
+                  {
+                    step: '03',
+                    title: 'Perfect Formatting',
+                    desc: 'AI analyzes and creates perfectly formatted thesis instantly'
+                  }
                 ].map((step, idx) => (
-                  <div key={idx} className="flex gap-6 pb-6 border-b border-border last:border-0">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="font-bold text-primary">{idx + 1}</span>
+                  <div key={idx} className="text-center space-y-4">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+                      <span className="text-lg font-bold text-primary">{step.step}</span>
                     </div>
-                    <div>
-                      <h3 className="font-semibold mb-1">{step.title}</h3>
-                      <p className="text-sm text-muted-foreground">{step.desc}</p>
-                    </div>
+                    <h3 className="font-semibold">{step.title}</h3>
+                    <p className="text-sm text-muted-foreground">{step.desc}</p>
                   </div>
                 ))}
+              </div>
+
+              <div className="text-center space-y-6">
+                <Button onClick={() => setCurrentPage('perfect')} className="group bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 h-12 px-8 py-4 text-lg font-semibold">
+                  🚀 Perfect AI Formatting
+                  <ArrowRight className="ml-2 w-5 h-5" />
+                </Button>
+                <div className="flex gap-3 justify-center">
+                  <Button variant="outline" onClick={() => setCurrentPage('generate')}>
+                    Standard Formatting
+                  </Button>
+                  <Button variant="ghost">
+                    See How It Works
+                  </Button>
+                </div>
               </div>
             </section>
 
@@ -154,8 +178,8 @@ function App() {
                 <p className="text-primary-foreground/90">
                   Works with any university template. No setup required.
                 </p>
-                <Button variant="hero" onClick={() => setCurrentPage('generate')} className="bg-background text-primary hover:bg-card">
-                  Start Now
+                <Button variant="hero" onClick={() => setCurrentPage('perfect')} className="bg-background text-primary hover:bg-card">
+                  Start Perfect Formatting
                 </Button>
               </div>
             </section>
@@ -164,9 +188,9 @@ function App() {
 
         {currentPage === 'generate' && <TemplateGenerator />}
 
-        {currentPage === 'enforce' && <DocumentUploader />}
+        {currentPage === 'perfect' && <PerfectThesisGenerator />}
 
-        {currentPage === 'status' && <StatusPage />}
+        {currentPage === 'enforce' && <DocumentUploader />}
       </main>
 
       {/* Footer */}

@@ -52,12 +52,31 @@ def detect_style_usage(docx_path):
 
 
 def extract_docx_styles(docx_path):
+    """Extract styles and margins from a DOCX file with error handling."""
     styles = {}
     margins = {}
 
-    with zipfile.ZipFile(docx_path) as docx:
-        styles_xml = docx.read("word/styles.xml")
-        document_xml = docx.read("word/document.xml")
+    try:
+        # Validate it's actually a ZIP file (DOCX is ZIP-based)
+        if not zipfile.is_zipfile(docx_path):
+            raise ValueError("File is not a valid DOCX/ZIP file")
+
+        with zipfile.ZipFile(docx_path) as docx:
+            # Check for required files
+            required_files = ["word/styles.xml", "word/document.xml"]
+            missing_files = [f for f in required_files if f not in docx.namelist()]
+
+            if missing_files:
+                print(f"Warning: Missing files in DOCX: {missing_files}")
+                # Return basic info if core files missing
+                return {"styles": {}, "margins": {"warning": "Incomplete DOCX structure"}}
+
+            styles_xml = docx.read("word/styles.xml")
+            document_xml = docx.read("word/document.xml")
+
+    except Exception as e:
+        print(f"Error reading DOCX structure: {e}")
+        return {"styles": {}, "margins": {"error": str(e)}}
 
     # ---------- STYLES ----------
     root = etree.XML(styles_xml)
