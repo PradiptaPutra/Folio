@@ -49,6 +49,19 @@ class CompleteThesisBuilder:
         self.ai_data = {}  # Will be populated during build
         self.mapper = ContentMapper(self.analyzer, self.extractor, self.ai_data)
 
+        # CRITICAL: Ensure AI extraction runs and analyzed_data is populated
+        if use_ai and self.ai_extractor:
+            try:
+                print("[INIT] Running AI content extraction to populate analyzed_data...")
+                sections = self.ai_extractor._extract_sections()
+                print(f"[INIT] AI extraction completed, got {len(sections)} sections")
+                if hasattr(self.ai_extractor, 'analyzed_data') and self.ai_extractor.analyzed_data:
+                    print("[INIT] analyzed_data populated successfully")
+                else:
+                    print("[INIT] WARNING: analyzed_data not populated")
+            except Exception as e:
+                print(f"[INIT] AI extraction failed: {e}")
+
         # Initialize AI-powered components for perfect formatting (optional)
         self.perfect_adapter = None
         self.quality_validator = None
@@ -196,9 +209,26 @@ class CompleteThesisBuilder:
         analyzed_data = user_data.get('analyzed_data')
         if analyzed_data:
             print("[INFO] Using analyzed_data from first AI call for content insertion")
+            # DEBUG: Check analyzed_data content
+            total_chars = 0
+            for chapter_key in ['chapter1', 'chapter2', 'chapter3', 'chapter4', 'chapter5', 'chapter6']:
+                if chapter_key in analyzed_data:
+                    chapter = analyzed_data[chapter_key]
+                    chapter_chars = sum(len(str(content)) for content in chapter.values())
+                    total_chars += chapter_chars
+                    print(f"[DEBUG] {chapter_key}: {chapter_chars} chars")
+
+            print(f"[DEBUG] Total content characters: {total_chars}")
+
+            if total_chars < 1000:
+                print("[WARNING] Very little content in analyzed_data, results may be poor")
+            else:
+                print("[INFO] Content looks substantial, proceeding with insertion")
+
             return self._build_with_analyzed_data(user_data, analyzed_data)
         else:
-            print("[WARNING] No analyzed_data found, falling back to standard approach")
+            print("[ERROR] No analyzed_data found! This will result in empty content!")
+            print("[ERROR] Check that AIEnhancedContentExtractor is generating analyzed_data properly")
             return self._build_standard(user_data)
 
     def _build_with_analyzed_data(self, user_data, analyzed_data):
@@ -1425,6 +1455,321 @@ class CompleteThesisBuilder:
         print(f"[DEBUG] Document saved successfully, size: {final_size} bytes")
 
         return self.output_path
+
+    def _to_roman(self, num):
+        """Convert number to Roman numeral."""
+        val = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+        syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I']
+        roman_num = ''
+        i = 0
+        while num > 0:
+            for _ in range(num // val[i]):
+                roman_num += syms[i]
+                num -= val[i]
+            i += 1
+        return roman_num
+
+    def _insert_abstract(self, doc, analyzed_data):
+        """Insert abstract and keywords with enhanced detection."""
+        abstract_data = analyzed_data.get('abstract', {})
+        if not abstract_data:
+            print("[WARNING] No abstract data found in analyzed_data")
+            return 0
+
+        insertions = 0
+        print(f"[INFO] Starting abstract insertion with keys: {list(abstract_data.keys())}")
+
+        # Indonesian Abstract - Multiple possible section names
+        indonesian_patterns = [
+            'ABSTRAK', 'SARI', 'ABSTRAK INDONESIA',
+            'RINGKASAN', 'SUMMARY INDONESIA'
+        ]
+
+        english_patterns = [
+            'ABSTRACT', 'ABSTRAK BAHASA INGGRIS',
+            'ABSTRACT ENGLISH', 'SUMMARY ENGLISH'
+        ]
+
+        # Insert Indonesian Abstract
+        indonesian_inserted = self._insert_single_abstract(
+            doc, abstract_data, 'indonesian', indonesian_patterns, 'Kata kunci'
+        )
+        insertions += indonesian_inserted
+
+        # Insert English Abstract
+        english_inserted = self._insert_single_abstract(
+            doc, abstract_data, 'english', english_patterns, 'Keywords'
+        )
+        insertions += english_inserted
+
+        print(f"[INFO] Abstract insertion complete: {insertions} sections inserted")
+        return insertions
+
+    def _insert_single_abstract(self, doc, abstract_data, lang_key, section_patterns, keyword_label):
+        """Insert a single abstract (Indonesian or English) with keywords."""
+        insertions = 0
+        abstract_text = abstract_data.get(lang_key, '')
+        # Fix: Use correct keywords key
+        keywords_key = 'keywords_id' if lang_key == 'indonesian' else 'keywords_en'
+        keywords = abstract_data.get(keywords_key, [])
+
+        if not abstract_text:
+            print(f"[WARNING] No {lang_key} abstract content found")
+            return 0
+
+        print(f"[INFO] Looking for {lang_key} abstract section with patterns: {section_patterns}")
+
+        # Find the abstract section
+        for para_index, para in enumerate(doc.paragraphs):
+            para_text_upper = para.text.upper()
+            found_section = False
+
+            # Check if this paragraph matches any of the section patterns
+            for pattern in section_patterns:
+                if pattern in para_text_upper:
+                    found_section = True
+                    print(f"[INFO] Found {lang_key} abstract section: '{para.text.strip()}'")
+                    break
+
+            if found_section:
+                content_inserted = False
+                keywords_inserted = False
+
+                # Look for content insertion point (next few paragraphs)
+                for i in range(para_index + 1, min(para_index + 15, len(doc.paragraphs))):
+                    content_para = doc.paragraphs[i]
+
+                    # Skip if this is another section header
+                    if any(header in content_para.text.upper() for header in
+                           ['BAB ', 'CHAPTER', 'DAFTAR', 'LAMPIRAN', 'ABSTRAK', 'ABSTRACT']):
+                        continue
+
+                    # Check if this is a suitable content paragraph
+                    if (content_para.style and 'isi paragraf' in str(content_para.style).lower()) or \
+                       'Format paragraf' in content_para.text or \
+                       len(content_para.text.strip()) < 200:  # Likely placeholder or short content
+
+                        # Insert abstract content
+                        old_content = content_para.text[:50] if content_para.text else "[empty]"
+                        content_para.clear()
+                        content_para.add_run(abstract_text)
+
+                        # Preserve or set style
+                        try:
+                            if hasattr(content_para, 'style') and content_para.style:
+                                # Keep existing style
+                                pass
+                            else:
+                                content_para.style = 'isi paragraf'
+                        except:
+                            pass
+
+                        insertions += 1
+                        content_inserted = True
+                        print(f"[SUCCESS] Inserted {lang_key} abstract ({len(abstract_text)} chars)")
+                        print(f"[SUCCESS] Replaced: '{old_content}...' with abstract content")
+
+                        # Look for keywords insertion point (next paragraph)
+                        if keywords and i + 1 < len(doc.paragraphs):
+                            keyword_para = doc.paragraphs[i + 1]
+                            keyword_text_lower = keyword_para.text.lower()
+
+                            if ('kata kunci' in keyword_text_lower or
+                                'keywords' in keyword_text_lower or
+                                'key words' in keyword_text_lower or
+                                len(keyword_para.text.strip()) < 50):  # Likely placeholder
+
+                                keywords_text = f"{keyword_label}: {', '.join(keywords)}"
+                                keyword_para.clear()
+                                keyword_para.add_run(keywords_text)
+
+                                insertions += 1
+                                keywords_inserted = True
+                                print(f"[SUCCESS] Inserted {lang_key} keywords: {keywords_text}")
+
+                        break
+
+                if not content_inserted:
+                    print(f"[WARNING] Could not find content insertion point for {lang_key} abstract")
+                if keywords and not keywords_inserted:
+                    print(f"[WARNING] Could not find keywords insertion point for {lang_key}")
+
+                break  # Stop looking for more sections
+
+        return insertions
+
+    def _insert_chapter_with_headings(self, doc, chapter_num, chapter_content):
+        """Insert chapter content with proper subsection headings."""
+        insertions = 0
+
+        # Subsection title mapping
+        subsection_titles = {
+            'latar_belakang': 'Latar Belakang',
+            'rumusan_masalah': 'Rumusan Masalah',
+            'tujuan_penelitian': 'Tujuan Penelitian',
+            'manfaat_penelitian': 'Manfaat Penelitian',
+            'batasan_masalah': 'Batasan Masalah dan Ruang Lingkup',
+            'landasan_teori': 'Landasan Teori',
+            'penelitian_terkait': 'Penelitian Terkait',
+            'kerangka_pemikiran': 'Kerangka Pemikiran',
+            'desain_penelitian': 'Desain Penelitian',
+            'metode_pengumpulan_data': 'Metode Pengumpulan Data',
+            'metode_analisis': 'Metode Analisis Data',
+            'tools': 'Alat dan Bahan',
+            'analisis_kebutuhan': 'Analisis Kebutuhan Sistem',
+            'perancangan_sistem': 'Perancangan Sistem',
+            'perancangan_interface': 'Perancangan Antarmuka',
+            'implementasi': 'Implementasi Sistem',
+            'hasil_pengujian': 'Hasil Pengujian',
+            'pembahasan': 'Pembahasan Hasil',
+            'evaluasi': 'Evaluasi Sistem',
+            'kesimpulan': 'Kesimpulan',
+            'saran': 'Saran'
+        }
+
+        # Find chapter heading
+        chapter_heading_index = None
+        for i, para in enumerate(doc.paragraphs):
+            if f"BAB {self._to_roman(chapter_num)}" in para.text.upper():
+                chapter_heading_index = i
+                print(f"[INFO] Found Chapter {chapter_num} heading at paragraph {i}")
+                break
+
+        if chapter_heading_index is None:
+            print(f"[WARNING] Chapter {chapter_num} heading not found")
+            return 0
+
+        # Insert each subsection with heading
+        subsection_counter = 1
+        current_index = chapter_heading_index + 1
+
+        for subsection_key, subsection_content in chapter_content.items():
+            if not subsection_content or len(subsection_content.strip()) < 50:
+                continue
+
+            # Create subsection heading (e.g., "1.1 Latar Belakang")
+            heading_text = f"{chapter_num}.{subsection_counter} {subsection_titles.get(subsection_key, subsection_key.title())}"
+
+            # Find or create heading paragraph
+            heading_para = self._find_or_create_heading(doc, current_index, heading_text)
+
+            if heading_para:
+                # Find content paragraph after heading
+                heading_index = doc.paragraphs.index(heading_para)
+                content_para = self._find_content_paragraph_after(doc, heading_index)
+
+                if content_para:
+                    # Insert content
+                    old_text = content_para.text[:50] if content_para.text else "[empty]"
+                    content_para.clear()
+                    content_para.add_run(subsection_content)
+
+                    # Preserve style
+                    try:
+                        if 'isi paragraf' in str(content_para.style).lower():
+                            content_para.style = content_para.style
+                        else:
+                            content_para.style = 'isi paragraf'
+                    except:
+                        pass
+
+                    print(f"[SUCCESS] {heading_text}: {len(subsection_content)} chars")
+                    insertions += 1
+                    current_index = doc.paragraphs.index(content_para) + 1
+
+            subsection_counter += 1
+
+        return insertions
+
+    def _find_or_create_heading(self, doc, start_index, heading_text):
+        """Find existing heading or create new one."""
+        # Search for existing similar heading
+        for i in range(start_index, min(start_index + 15, len(doc.paragraphs))):
+            para = doc.paragraphs[i]
+            if (para.style.name == 'Heading 3' or
+                'Subbab' in para.text or
+                heading_text.split()[0] in para.text):  # e.g., "1.1" in existing text
+
+                # Update with proper heading
+                para.clear()
+                para.add_run(heading_text)
+                para.style = 'Heading 3'
+                return para
+
+        # If not found, try to find a placeholder paragraph
+        for i in range(start_index, min(start_index + 15, len(doc.paragraphs))):
+            para = doc.paragraphs[i]
+            if ('TULISKAN' in para.text.upper() or
+                len(para.text.strip()) < 50):  # Likely placeholder
+
+                para.clear()
+                para.add_run(heading_text)
+                para.style = 'Heading 3'
+                return para
+
+        print(f"[WARNING] Could not find or create heading for: {heading_text}")
+        return None
+
+    def _find_content_paragraph_after(self, doc, heading_index):
+        """Find content paragraph after heading."""
+        for i in range(heading_index + 1, min(heading_index + 10, len(doc.paragraphs))):
+            para = doc.paragraphs[i]
+            if ('isi paragraf' in str(para.style).lower() or
+                'Format paragraf' in para.text or
+                len(para.text.strip()) < 100):  # Likely content area
+
+                return para
+
+        print(f"[WARNING] No content paragraph found after heading at index {heading_index}")
+        return None
+
+    def _insert_references(self, doc, analyzed_data):
+        """Insert references into DAFTAR PUSTAKA section."""
+        references = analyzed_data.get('references', [])
+        if not references:
+            return 0
+
+        insertions = 0
+
+        # Find DAFTAR PUSTAKA section
+        for para in doc.paragraphs:
+            if 'DAFTAR PUSTAKA' in para.text.upper():
+                para_index = doc.paragraphs.index(para)
+                print(f"[INFO] Found DAFTAR PUSTAKA at paragraph {para_index}")
+
+                # Clear existing placeholder content
+                cleared_count = 0
+                for i in range(para_index + 1, min(para_index + 20, len(doc.paragraphs))):
+                    ref_para = doc.paragraphs[i]
+                    if ('Gunakan reference manager' in ref_para.text or
+                        'DAFTAR PUSTAKA' in ref_para.text.upper() or
+                        len(ref_para.text.strip()) < 50):
+
+                        ref_para.clear()
+                        cleared_count += 1
+                        if cleared_count >= 5:  # Clear a few placeholder entries
+                            break
+
+                # Insert references
+                insert_index = para_index + 1
+                for ref in references[:15]:  # Limit to 15 references
+                    if insert_index < len(doc.paragraphs):
+                        target_para = doc.paragraphs[insert_index]
+                        target_para.clear()
+                        target_para.add_run(ref)
+                        target_para.style = 'Normal'
+                        insertions += 1
+                        insert_index += 1
+                    else:
+                        # Add new paragraph
+                        new_para = doc.add_paragraph(ref)
+                        new_para.style = 'Normal'
+                        insertions += 1
+
+                print(f"[SUCCESS] Inserted {insertions} references")
+                break
+
+        return insertions
 
 
 def create_complete_thesis(
