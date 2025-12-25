@@ -12,20 +12,22 @@ from .content_extractor import ContentExtractor
 class ContentMapper:
     """Maps extracted content to template structure intelligently."""
     
-    def __init__(self, template_analyzer: TemplateAnalyzer, content_extractor: ContentExtractor):
+    def __init__(self, template_analyzer: TemplateAnalyzer, content_extractor: ContentExtractor, ai_data: Dict[str, Any] = None):
         """Initialize with template and content analysis."""
         self.template = template_analyzer
         self.content = content_extractor
-        self.mapping = self._create_mapping()
+        self.ai_data = ai_data or {}
+        self.mapping = self._create_mapping(self.ai_data)
     
-    def _create_mapping(self) -> Dict[str, Any]:
+    def _create_mapping(self, ai_data: Dict[str, Any] = None) -> Dict[str, Any]:
         """Create intelligent mapping between content and template."""
+        ai_data = ai_data or {}
         mapping = {
             "front_matter": self._map_front_matter(),
             "main_chapters": self._map_chapters(),
             "back_matter": self._map_back_matter(),
             "missing_sections": self._identify_missing_sections(),
-            "placeholder_replacements": self._map_placeholders(),
+            "placeholder_replacements": self._map_placeholders(ai_data),
         }
         return mapping
     
@@ -131,15 +133,27 @@ class ContentMapper:
         
         return missing
     
-    def _map_placeholders(self) -> Dict[str, str]:
-        """Map template placeholders to content or metadata."""
+    def _map_placeholders(self, ai_data: Dict[str, Any] = None) -> Dict[str, str]:
+        """Map template placeholders to content or metadata, prioritizing AI data."""
         placeholders = {}
         template_placeholders = self.template.analysis["placeholders"]["text_placeholders"]
-        
+        ai_data = ai_data or {}
+        if not isinstance(ai_data, dict):
+            ai_data = {}
+
         for placeholder in template_placeholders:
-            # Try to match with content metadata
-            if any(word in placeholder.lower() for word in ["title", "judul"]):
-                placeholders[placeholder] = "{TITLE}"
+            # Try AI data first
+            if ai_data.get("title") and any(word in placeholder.lower() for word in ["title", "judul"]):
+                placeholders[placeholder] = str(ai_data["title"])
+            elif ai_data.get("author") and any(word in placeholder.lower() for word in ["author", "nama", "penulis"]):
+                placeholders[placeholder] = str(ai_data.get("author", "{AUTHOR}"))
+            elif ai_data.get("date") and any(word in placeholder.lower() for word in ["date", "tanggal"]):
+                placeholders[placeholder] = str(ai_data.get("date", "{DATE}"))
+            elif ai_data.get("advisor") and any(word in placeholder.lower() for word in ["advisor", "dosen", "pembimbing"]):
+                placeholders[placeholder] = str(ai_data.get("advisor", "{ADVISOR}"))
+            # Use basic defaults if no AI data
+            elif any(word in placeholder.lower() for word in ["title", "judul"]):
+                placeholders[placeholder] = str(ai_data.get("title", "Judul Skripsi Default"))
             elif any(word in placeholder.lower() for word in ["author", "nama", "penulis"]):
                 placeholders[placeholder] = "{AUTHOR}"
             elif any(word in placeholder.lower() for word in ["date", "tanggal"]):

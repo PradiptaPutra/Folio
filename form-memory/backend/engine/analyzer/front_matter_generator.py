@@ -396,12 +396,17 @@ class BackMatterGenerator:
         
         if references:
             for ref in references:
+                # Skip empty references
+                if not ref:
+                    continue
+                    
                 ref_text = self._format_apa_reference(ref)
-                ref_para = doc.add_paragraph(ref_text)
-                # Hanging indent
-                self._set_hanging_indent(ref_para, Inches(0.5))
-                for run in ref_para.runs:
-                    run.font.size = Pt(11)
+                if ref_text:  # Only add if we got valid text
+                    ref_para = doc.add_paragraph(ref_text)
+                    # Hanging indent
+                    self._set_hanging_indent(ref_para, Inches(0.5))
+                    for run in ref_para.runs:
+                        run.font.size = Pt(11)
         else:
             placeholder = doc.add_paragraph("[Tuliskan referensi dalam format APA 6th edition]")
             for run in placeholder.runs:
@@ -424,34 +429,81 @@ class BackMatterGenerator:
         
         doc.add_paragraph()
         
-        if appendix_items:
+        if appendix_items and isinstance(appendix_items, list):
             for idx, item in enumerate(appendix_items, 1):
-                # Appendix heading
-                heading = f"Lampiran {chr(64 + idx)}: {item.get('title', f'Appendix {idx}')}"
-                head_para = doc.add_paragraph(heading)
-                head_run = head_para.runs[0]
-                head_run.font.bold = True
-                head_run.font.size = Pt(12)
+                # Skip empty items
+                if not item:
+                    continue
                 
-                # Content
-                content = item.get("content", "")
-                if content:
-                    content_para = doc.add_paragraph(content)
-                    for run in content_para.runs:
-                        run.font.size = Pt(11)
-                
-                # Page break between appendices
-                if idx < len(appendix_items):
-                    doc.add_page_break()
+                try:
+                    # Handle both string and dict items
+                    if isinstance(item, str):
+                        # If item is a string, use it as content
+                        heading = f"Lampiran {chr(64 + idx)}"
+                        head_para = doc.add_paragraph(heading)
+                        head_run = head_para.runs[0]
+                        head_run.font.bold = True
+                        head_run.font.size = Pt(12)
+                        
+                        content_para = doc.add_paragraph(item)
+                        for run in content_para.runs:
+                            run.font.size = Pt(11)
+                    elif isinstance(item, dict):
+                        # If item is dict, extract title and content
+                        heading = f"Lampiran {chr(64 + idx)}: {item.get('title', f'Appendix {idx}')}"
+                        head_para = doc.add_paragraph(heading)
+                        head_run = head_para.runs[0]
+                        head_run.font.bold = True
+                        head_run.font.size = Pt(12)
+                        
+                        # Content
+                        content = item.get("content", "")
+                        if content:
+                            content_para = doc.add_paragraph(content)
+                            for run in content_para.runs:
+                                run.font.size = Pt(11)
+                    else:
+                        # For other types, convert to string
+                        heading = f"Lampiran {chr(64 + idx)}"
+                        head_para = doc.add_paragraph(heading)
+                        head_run = head_para.runs[0]
+                        head_run.font.bold = True
+                        head_run.font.size = Pt(12)
+                        
+                        content_para = doc.add_paragraph(str(item))
+                        for run in content_para.runs:
+                            run.font.size = Pt(11)
+                    
+                    # Page break between appendices
+                    if idx < len(appendix_items):
+                        doc.add_page_break()
+                except Exception as e:
+                    print(f"[WARNING] Error processing appendix {idx}: {e}")
+                    continue
         else:
             placeholder = doc.add_paragraph("[Lampiran disusun dengan huruf besar (A, B, C, dst.) dan diletakkan setelah Daftar Pustaka]")
             for run in placeholder.runs:
                 run.font.italic = True
                 run.font.size = Pt(11)
     
-    def _format_apa_reference(self, ref: Dict[str, str]) -> str:
-        """Format a reference in APA 6th edition style."""
-        ref_type = ref.get("type", "book").lower()
+    def _format_apa_reference(self, ref: Any) -> str:
+        """Format a reference in APA 6th edition style.
+        
+        Args:
+            ref: Reference as dict or string
+            
+        Returns:
+            Formatted reference string
+        """
+        # Handle string references (already formatted)
+        if isinstance(ref, str):
+            return ref.strip() if ref else ""
+        
+        # Handle dictionary references
+        if not isinstance(ref, dict):
+            return ""
+        
+        ref_type = ref.get("type", "book").lower() if ref else "book"
         
         if ref_type == "book":
             return f"{ref.get('author', 'Unknown')}. ({ref.get('year', 'n.d.')}). {ref.get('title', 'Unknown title')}. {ref.get('publisher', '')}."

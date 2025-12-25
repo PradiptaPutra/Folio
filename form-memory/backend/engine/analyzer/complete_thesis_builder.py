@@ -16,6 +16,7 @@ from .content_mapper import ContentMapper
 from .document_merger import DocumentMerger
 from .front_matter_generator import FrontMatterGenerator, BackMatterGenerator
 from ..parser.normalized_extractor import extract_normalized_structure
+from ..ai.thesis_rewriter import ThesisRewriter
 
 
 class CompleteThesisBuilder:
@@ -45,13 +46,16 @@ class CompleteThesisBuilder:
         # Use AI-enhanced extractor when available
         self.ai_extractor = AIEnhancedContentExtractor(str(self.content_path), use_ai=use_ai, api_key=api_key)
         self.extractor = ContentExtractor(str(self.content_path))
-        self.mapper = ContentMapper(self.analyzer, self.extractor)
+        self.ai_data = {}  # Will be populated during build
+        self.mapper = ContentMapper(self.analyzer, self.extractor, self.ai_data)
 
         # Initialize AI-powered components for perfect formatting (optional)
         self.perfect_adapter = None
         self.quality_validator = None
 
         # Initialize AI components dynamically in build method
+        self.thesis_rewriter = ThesisRewriter(api_key=api_key) if api_key else None
+        self.ai_data = {}  # Will be populated during build
 
         # Semantic validation
         self.semantic_validation = self.ai_extractor.get_semantic_validation() if use_ai else None
@@ -87,6 +91,33 @@ class CompleteThesisBuilder:
         """
         user_data = user_data or {}
         print(f"[DEBUG] Starting build with use_ai={self.use_ai}, api_key={'present' if self.api_key else 'missing'}")
+
+        # CRITICAL FIX: Get analyzed_data from the first AI call
+        analyzed_data = None
+        if self.use_ai and hasattr(self.ai_extractor, 'analyzed_data') and self.ai_extractor.analyzed_data:
+            analyzed_data = self.ai_extractor.analyzed_data
+            print(f"[INFO] Retrieved analyzed_data from ai_extractor: {type(analyzed_data)}")
+            user_data['analyzed_data'] = analyzed_data
+            print(f"[INFO] Added analyzed_data to user_data with keys: {list(analyzed_data.keys())}")
+        elif self.use_ai and hasattr(self.ai_extractor, 'analyzed_data') and self.ai_extractor.analyzed_data:
+            analyzed_data = self.ai_extractor.analyzed_data
+            print(f"[INFO] Retrieved analyzed_data from ai_extractor: {type(analyzed_data)}")
+            user_data['analyzed_data'] = analyzed_data
+            print(f"[INFO] Added analyzed_data to user_data with keys: {list(analyzed_data.keys())}")
+
+        # AI Thesis Rewriting Processing (keep this for compatibility)
+        if self.use_ai and self.api_key and self.thesis_rewriter:
+            try:
+                print("[AI] Starting AI thesis rewriting")
+                raw_text = self.extractor.get_raw_text()
+                rewritten_data = self.thesis_rewriter.rewrite_thesis(raw_text)
+                self.ai_data.update(rewritten_data)
+                user_data.update(rewritten_data)
+                print(f"[AI] Rewritten data keys: {list(rewritten_data.keys())}")
+                # Recreate mapper with updated AI data
+                self.mapper = ContentMapper(self.analyzer, self.extractor, self.ai_data)
+            except Exception as e:
+                print(f"[WARNING] AI rewriting failed: {e}")
 
         # AI-Powered Template Intelligence Processing
         if self.use_ai and self.api_key:
@@ -145,80 +176,517 @@ class CompleteThesisBuilder:
 
         if processing_method == 'ai_intelligent':
             print("[DEBUG] Using AI-intelligent document building")
-            return self._build_ai_intelligent(user_data)
+            result = self._build_ai_intelligent(user_data)
         else:
             print("[DEBUG] Using standard document building")
-            return self._build_standard(user_data)
+            result = self._build_standard(user_data)
 
-        # Fallback to standard processing
-        return self._build_standard(user_data)
+        # Ensure result is a Path object
+        if not isinstance(result, Path):
+            print(f"[ERROR] Build method returned {type(result).__name__} instead of Path: {result}")
+            raise TypeError(f"Build method must return Path, got {type(result).__name__}")
 
-    def _build_ai_intelligent(self, user_data: Dict[str, Any]) -> Path:
+        return result
+
+    def _build_ai_intelligent(self, user_data):
         """Build thesis using AI-intelligent processing with proper template adaptation."""
         print(f"[DEBUG] Starting AI-intelligent build with enhanced content")
 
-        # Get AI results
-        ai_enhanced_content = user_data.get('ai_enhanced_content', '')
-        ai_template_analysis = user_data.get('ai_template_analysis', {})
-        ai_application_result = user_data.get('ai_application_result', {})
+        # CRITICAL FIX: Check if we have analyzed_data from the first AI call
+        analyzed_data = user_data.get('analyzed_data')
+        if analyzed_data:
+            print("[INFO] Using analyzed_data from first AI call for content insertion")
+            return self._build_with_analyzed_data(user_data, analyzed_data)
+        else:
+            print("[WARNING] No analyzed_data found, falling back to standard approach")
+            return self._build_standard(user_data)
 
-        print(f"[DEBUG] AI content length: {len(ai_enhanced_content)}")
-        print(f"[DEBUG] Template analysis keys: {list(ai_template_analysis.keys())}")
-        print(f"[DEBUG] Application result keys: {list(ai_application_result.keys())}")
+    def _build_with_analyzed_data(self, user_data, analyzed_data):
+        """Build document using the comprehensive analyzed_data from first AI call."""
+        print("\n" + "="*60)
+        print("BUILDING DOCUMENT WITH ANALYZED CONTENT")
+        print("="*60)
 
-        # Load template document as the base
+        # Verify analyzed_data has content
+        print(f"[VERIFY] Analyzed data keys: {list(analyzed_data.keys())}")
+
+        # Check each chapter content
+        for i in range(1, 7):
+            chapter_key = f'chapter{i}'
+            if chapter_key in analyzed_data:
+                chapter = analyzed_data[chapter_key]
+                print(f"\n[VERIFY] Chapter {i}:")
+                for subsection, content in chapter.items():
+                    content_length = len(content) if content else 0
+                    preview = content[:100] if content else "[EMPTY]"
+                    print(f"  - {subsection}: {content_length} chars | Preview: {preview}...")
+
+                    if content_length < 200:
+                        print(f"  ⚠️  WARNING: {subsection} content is too short ({content_length} chars)")
+            else:
+                print(f"\n[VERIFY] Chapter {i}: NOT FOUND")
+
+        # Load template
         try:
             doc = Document(str(self.template_path))
-            print(f"[DEBUG] Template loaded as base document: {len(doc.paragraphs)} paragraphs, {len(doc.styles)} styles")
+            print(f"\n[INFO] Template loaded: {len(doc.paragraphs)} paragraphs")
         except Exception as e:
-            print(f"[WARNING] Failed to load template as base, creating new document: {e}")
-            doc = Document()
+            print(f"[ERROR] Failed to load template: {e}")
+            return self.output_path
 
-        # Get structure mapping for intelligent content replacement
-        structure_mapping = ai_application_result.get('structure_mapping', {})
-        section_mappings = structure_mapping.get('section_mappings', [])
-        print(f"[DEBUG] Found {len(section_mappings)} section mappings for content replacement")
+        # Replace metadata first
+        metadata = analyzed_data.get('metadata', {})
+        title = metadata.get('title', user_data.get('title', 'Untitled Thesis'))
+        author = metadata.get('author', user_data.get('author', 'Unknown'))
+        nim = metadata.get('nim', user_data.get('nim', '00000000'))
 
-        # Simple, reliable approach that worked before
-        print("[DEBUG] Using proven reliable approach")
+        metadata_replacements = 0
+        for para in doc.paragraphs:
+            text = para.text.strip()
+            # Replace title
+            if any(phrase in text.upper() for phrase in ['TULIS JUDUL', 'JUDUL SKRIPSI', 'BAGIAN JUDUL']):
+                para.text = title
+                metadata_replacements += 1
+                print(f"[METADATA] Replaced title: {title}")
 
-        # Always add standard content structure for reliability
-        if self.include_frontmatter:
-            print("[DEBUG] Adding front matter")
-            self._add_front_matter(doc, user_data)
+            # Replace author
+            if any(phrase in text.upper() for phrase in ['NAMA MAHASISWA', 'NAMA PENULIS']):
+                para.text = author
+                metadata_replacements += 1
+                print(f"[METADATA] Replaced author: {author}")
 
-        print("[DEBUG] Adding main content")
-        try:
-            normalized = extract_normalized_structure(str(self.content_path))
-            self._add_main_content(doc, user_data, normalized)
-        except Exception as e:
-            print(f"[DEBUG] Content extraction failed, using basic: {e}")
-            self._add_main_content(doc, user_data, None)
+            # Replace NIM
+            if text == 'NIM' or text == '94523999' or len(text) == 8 and text.isdigit():
+                para.text = nim
+                metadata_replacements += 1
+                print(f"[METADATA] Replaced NIM: {nim}")
 
-        print("[DEBUG] Adding back matter")
-        self._add_back_matter(doc, user_data)
+        print(f"[INFO] Made {metadata_replacements} metadata replacements")
 
-        # Debug document state before saving
-        print(f"[DEBUG] Document state before save: {type(doc)}")
-        print(f"[DEBUG] Document has {len(doc.paragraphs) if doc else 0} paragraphs")
+        # Insert chapter content
+        chapters_data = {
+            1: analyzed_data.get('chapter1', {}),
+            2: analyzed_data.get('chapter2', {}),
+            3: analyzed_data.get('chapter3', {}),
+            4: analyzed_data.get('chapter4', {}),
+            5: analyzed_data.get('chapter5', {}),
+            6: analyzed_data.get('chapter6', {})
+        }
 
-        # Save the document
-        print(f"[DEBUG] Saving AI-intelligent document to: {self.output_path}")
-        if doc is None:
-            print("[ERROR] Document became None during processing!")
-            return self.output_path  # Return path even if failed
+        total_insertions = 0
 
+        for chapter_num, chapter_content in chapters_data.items():
+            if not chapter_content:
+                print(f"[WARNING] No content for Chapter {chapter_num}")
+                continue
+
+            # Find chapter heading
+            chapter_found = False
+            chapter_para_index = None
+
+            for i, para in enumerate(doc.paragraphs):
+                if f"BAB {self._to_roman(chapter_num)}" in para.text.upper():
+                    chapter_found = True
+                    chapter_para_index = i
+                    print(f"\n[INFO] Found Chapter {chapter_num} at paragraph {i}: '{para.text.strip()}'")
+                    break
+
+            if not chapter_found:
+                print(f"[WARNING] Chapter {chapter_num} heading not found in template")
+                continue
+
+            # Insert content for each subsection
+            current_index = chapter_para_index + 1
+            chapter_insertions = 0
+
+            for subsection_key, subsection_content in chapter_content.items():
+                if not subsection_content or len(subsection_content.strip()) < 50:
+                    print(f"[DEBUG] Skipping {subsection_key}: content too short ({len(subsection_content) if subsection_content else 0} chars)")
+                    continue
+
+                # Find next content paragraph after current position
+                target_para = None
+                target_index = None
+
+                for j in range(current_index, min(current_index + 15, len(doc.paragraphs))):
+                    para = doc.paragraphs[j]
+
+                    # Check if this is a content paragraph (placeholder or empty content area)
+                    if (para.style.name == 'isi paragraf' or
+                        'Format paragraf dengan style' in para.text or
+                        'TULISKAN' in para.text.upper() or
+                        len(para.text.strip()) < 100):  # Likely a placeholder
+
+                        target_para = para
+                        target_index = j
+                        break
+
+                if target_para:
+                    # INSERT THE CONTENT!
+                    old_text = target_para.text[:50] if target_para.text else "[empty]"
+
+                    # Clear existing content
+                    target_para.clear()
+
+                    # Add new content
+                    run = target_para.add_run(subsection_content)
+
+                    # Try to preserve style
+                    try:
+                        if hasattr(target_para, 'style') and 'isi paragraf' in str(target_para.style).lower():
+                            target_para.style = target_para.style  # Keep existing style
+                        else:
+                            target_para.style = 'Normal'  # Fallback
+                    except:
+                        pass
+
+                    print(f"[SUCCESS] Inserted {len(subsection_content)} chars into Chapter {chapter_num}.{subsection_key}")
+                    print(f"[SUCCESS] Replaced: '{old_text}...' with '{subsection_content[:50]}...'")
+
+                    total_insertions += 1
+                    chapter_insertions += 1
+                    current_index = target_index + 1
+                else:
+                    print(f"[WARNING] No target paragraph found for Chapter {chapter_num}.{subsection_key} after paragraph {current_index}")
+
+            print(f"[INFO] Chapter {chapter_num}: {chapter_insertions} sections inserted")
+
+        print(f"\n[FINAL] Total content insertions: {total_insertions}")
+
+        if total_insertions == 0:
+            print("[ERROR] NO CONTENT WAS INSERTED!")
+            print("[ERROR] Check that analyzed_data has content and template has content paragraphs")
+            return self.output_path
+
+        # Save document
+        print(f"[INFO] Saving document to: {self.output_path}")
         try:
             doc.save(str(self.output_path))
-            print(f"[DEBUG] Document saved successfully")
+            print("[INFO] Document saved successfully")
         except Exception as e:
             print(f"[ERROR] Failed to save document: {e}")
             return self.output_path
 
         final_size = self.output_path.stat().st_size if self.output_path.exists() else 0
-        print(f"[DEBUG] AI-intelligent document saved, size: {final_size} bytes")
+        print(f"[INFO] Final document size: {final_size} bytes")
 
         return self.output_path
+
+    def _to_roman(self, num):
+        """Convert number to Roman numeral."""
+        val = [1000, 900, 500, 400, 100, 90, 50, 40, 10, 9, 5, 4, 1]
+        syms = ['M', 'CM', 'D', 'CD', 'C', 'XC', 'L', 'XL', 'X', 'IX', 'V', 'IV', 'I']
+        roman_num = ''
+        i = 0
+        while num > 0:
+            for _ in range(num // val[i]):
+                roman_num += syms[i]
+                num -= val[i]
+            i += 1
+        return roman_num
+
+    def _populate_template_with_ai_content(self, doc, ai_sections, user_data):
+        """Populate template placeholders with AI-analyzed content while preserving formatting."""
+        replacements_made = 0
+
+        print(f"[DEBUG] Starting template population with {len(ai_sections)} AI sections")
+
+        # DEBUG: Log what AI sections contain
+        for i, section in enumerate(ai_sections[:3]):  # First 3 sections
+            content = section.get('content', [])
+            print(f"[DEBUG] AI Section {i}: title='{section.get('title', 'no title')}', content_lines={len(content)}")
+            if content:
+                print(f"[DEBUG] Content preview: {content[0][:100]}..." if content[0] else "Empty content")
+
+        # Replace user data placeholders first (title, author, etc.)
+        replacements_made += self._replace_user_data_placeholders(doc, user_data)
+
+        # Replace chapter content placeholders with AI sections
+        replacements_made += self._replace_chapter_placeholders(doc, ai_sections)
+
+        # Clean up any remaining generic placeholders
+        replacements_made += self._clean_generic_placeholders(doc)
+
+        print(f"[DEBUG] Made {replacements_made} intelligent template replacements")
+        return replacements_made
+
+    def _replace_user_data_placeholders(self, doc, user_data):
+        """Replace user data placeholders like title, author, etc."""
+        replacements = 0
+
+        # Title placeholders
+        title_placeholders = [
+            r'TULIS JUDUL', r'JUDUL SKRIPSI', r'JUDUL TUGAS AKHIR',
+            r'BAGIAN JUDUL', r'HALAMAN JUDUL'
+        ]
+
+        title = user_data.get('title', '')
+        if title:
+            for para in doc.paragraphs:
+                text = para.text.upper()
+                for placeholder in title_placeholders:
+                    if placeholder.upper() in text:
+                        para.text = title
+                        replacements += 1
+                        print(f"[DEBUG] Replaced title placeholder with: '{title}'")
+                        break
+
+        # Author placeholders
+        author_placeholders = [r'NAMA PENULIS', r'NAMA MAHASISWA', r'AUTHOR']
+        author = user_data.get('author', '')
+        if author:
+            for para in doc.paragraphs:
+                text = para.text.upper()
+                for placeholder in author_placeholders:
+                    if placeholder in text:
+                        para.text = author
+                        replacements += 1
+                        print(f"[DEBUG] Replaced author placeholder with: '{author}'")
+                        break
+
+        # NIM placeholders
+        nim_placeholders = [r'NIM', r'NOMOR INDUK MAHASISWA']
+        nim = user_data.get('nim', '')
+        if nim:
+            for para in doc.paragraphs:
+                text = para.text.upper()
+                for placeholder in nim_placeholders:
+                    if placeholder in text:
+                        para.text = nim
+                        replacements += 1
+                        print(f"[DEBUG] Replaced NIM placeholder with: '{nim}'")
+                        break
+
+        return replacements
+
+    def _replace_chapter_placeholders(self, doc, ai_sections):
+        """Replace chapter content placeholders with AI-analyzed sections."""
+        replacements = 0
+
+        # Map AI sections to chapter numbers - more flexible mapping
+        chapter_mapping = {}
+        for i, section in enumerate(ai_sections):
+            title = section.get('title', '').upper()
+            content = section.get('content', [])
+
+            # Map based on position and keywords
+            if i == 0 or 'BAB I' in title or 'PENDAHULUAN' in title or 'INTRODUCTION' in title:
+                chapter_mapping['I'] = section
+            elif i == 1 or 'BAB II' in title or 'TINJAUAN PUSTAKA' in title or 'LITERATURE' in title:
+                chapter_mapping['II'] = section
+            elif i == 2 or 'BAB III' in title or 'METODOLOGI' in title or 'METHODOLOGY' in title:
+                chapter_mapping['III'] = section
+            elif i == 3 or 'BAB IV' in title or 'HASIL' in title or 'ANALYSIS' in title or 'RESULTS' in title:
+                chapter_mapping['IV'] = section
+            elif i == 4 or 'BAB V' in title or 'PENUTUP' in title or 'CONCLUSION' in title:
+                chapter_mapping['V'] = section
+            elif i == 5 or 'BAB VI' in title:
+                chapter_mapping['VI'] = section
+
+        print(f"[DEBUG] Chapter mapping: {list(chapter_mapping.keys())}")
+
+        # Replace content in ALL paragraphs that look like placeholders
+        # This is the key fix - insert content instead of clearing
+        content_inserted = 0
+        placeholders_cleared = 0
+
+        for para_idx, para in enumerate(doc.paragraphs):
+            text = para.text.strip()
+            upper_text = text.upper()
+
+            # Skip if paragraph already has substantial content (likely already processed)
+            if len(text) > 200:  # Increased threshold
+                continue
+
+            # Check for placeholder patterns that should be replaced with content
+            is_placeholder = (
+                'SUBBAB' in upper_text or
+                'ANAK SUBBAB' in upper_text or
+                'CUCU SUBBAB' in upper_text or
+                'TULISKAN' in upper_text or
+                'ISI BAB' in upper_text or
+                'CONTENT' in upper_text or
+                'KONTEN' in upper_text or
+                (len(text) < 50 and len(text) > 0)  # Short placeholder text
+            )
+
+            if is_placeholder:
+                print(f"[DEBUG] Processing paragraph {para_idx}: '{text[:50]}...' (placeholder: {is_placeholder})")
+
+                # Find which chapter this belongs to
+                chapter_num = self._find_parent_chapter(doc, para)
+                print(f"[DEBUG] Chapter context: {chapter_num}")
+
+                if chapter_num and chapter_num in chapter_mapping:
+                    ai_section = chapter_mapping[chapter_num]
+                    content_lines = ai_section.get('content', [])
+                    print(f"[DEBUG] AI section has {len(content_lines)} content lines")
+
+                    # CRITICAL FIX: Insert actual content instead of clearing
+                    if content_lines and len(content_lines) > 0:
+                        # Join all content lines into coherent paragraphs
+                        # But split into multiple paragraphs if very long
+                        full_content = ' '.join([line.strip() for line in content_lines if line.strip()])
+
+                        if len(full_content) > 1000:  # Split long content
+                            # Split into paragraphs at sentence boundaries
+                            sentences = full_content.replace('?', '.').replace('!', '.').split('.')
+                            paragraphs = []
+                            current_para = ""
+                            for sentence in sentences:
+                                sentence = sentence.strip()
+                                if not sentence:
+                                    continue
+                                if len(current_para + sentence) > 500:
+                                    if current_para:
+                                        paragraphs.append(current_para + '.')
+                                    current_para = sentence
+                                else:
+                                    current_para += ('. ' if current_para else '') + sentence
+
+                            if current_para:
+                                paragraphs.append(current_para + '.')
+
+                            # Insert first paragraph into current paragraph
+                            para.text = paragraphs[0]
+                            content_inserted += 1
+
+                            # Add additional paragraphs
+                            current_para_obj = para
+                            for additional_para in paragraphs[1:]:
+                                if additional_para.strip():
+                                    new_para = doc.add_paragraph(additional_para)
+                                    # Copy style from original
+                                    new_para.style = para.style
+                                    if hasattr(para, 'paragraph_format'):
+                                        new_para.paragraph_format.left_indent = para.paragraph_format.left_indent
+                                        new_para.paragraph_format.first_line_indent = para.paragraph_format.first_line_indent
+                                        new_para.paragraph_format.line_spacing = para.paragraph_format.line_spacing
+                                    current_para_obj = new_para
+                                    content_inserted += 1
+
+                            print(f"[DEBUG] INSERTED MULTI-PARAGRAPH content for chapter {chapter_num}: {len(full_content)} chars total")
+                        elif full_content:
+                            para.text = full_content
+                            content_inserted += 1
+                            print(f"[DEBUG] INSERTED content for chapter {chapter_num}: {len(full_content)} chars")
+                            print(f"[DEBUG] Content preview: {full_content[:100]}...")
+                        else:
+                            para.text = ""  # Clear if no content
+                            placeholders_cleared += 1
+                    else:
+                        para.text = ""  # Clear if no content available
+                        placeholders_cleared += 1
+                        print(f"[DEBUG] No content available for chapter {chapter_num}")
+                else:
+                    # If we can't map to a chapter, clear the placeholder
+                    para.text = ""
+                    placeholders_cleared += 1
+                    print(f"[DEBUG] Cleared unmapped placeholder: '{text[:50]}...'")
+            else:
+                print(f"[DEBUG] Skipping paragraph {para_idx}: not a placeholder")
+
+        print(f"[DEBUG] Content insertion summary: {content_inserted} paragraphs filled, {placeholders_cleared} placeholders cleared")
+        replacements += content_inserted
+
+        print(f"[DEBUG] Chapter content replacement completed: {replacements} insertions")
+        return replacements
+
+    def _find_parent_chapter(self, doc, target_para):
+        """Find the chapter number for a given paragraph by looking backwards."""
+        para_index = None
+        for i, para in enumerate(doc.paragraphs):
+            if para == target_para:
+                para_index = i
+                break
+
+        if para_index is None:
+            return None
+
+        # Look backwards for chapter header
+        for i in range(para_index - 1, max(-1, para_index - 10), -1):
+            para = doc.paragraphs[i]
+            text = para.text.strip().upper()
+            if text.startswith('BAB '):
+                parts = text.split()
+                if len(parts) >= 2:
+                    chapter_marker = parts[1].strip('.:')
+                    if chapter_marker in ['I', 'II', 'III', 'IV', 'V', 'VI']:
+                        return chapter_marker
+
+        return None
+
+    def _clean_generic_placeholders(self, doc):
+        """Clean up any remaining generic placeholders."""
+        replacements = 0
+
+        placeholders_to_clear = [
+            r'TULISKAN', r'ISI BAB', r'SUBBAB', r'ANAK SUBBAB', r'CUCU SUBBAB',
+            r'KONTEN', r'CONTENT', r'PLACEHOLDER'
+        ]
+
+        for para in doc.paragraphs:
+            text = para.text.upper()
+            for placeholder in placeholders_to_clear:
+                if placeholder in text and len(text) < 100:  # Only clear short placeholder text
+                    para.text = ""
+                    replacements += 1
+                    print(f"[DEBUG] Cleared generic placeholder: '{text[:50]}...'")
+                    break
+
+        return replacements
+
+    def _populate_template_structured(self, doc, ai_sections, user_data):
+        """Fallback method: Populate template in a structured way if intelligent replacement fails."""
+        print("[DEBUG] Using structured population approach")
+
+        # Find main content area (after front matter)
+        main_content_start = self._find_main_content_start(doc)
+
+        # Insert AI content in structured sections
+        insert_position = main_content_start
+        for idx, section in enumerate(ai_sections, 1):
+            if idx > 1:
+                # Add page break between chapters
+                if insert_position < len(doc.paragraphs):
+                    doc.paragraphs[insert_position].insert_page_break_before()
+
+            # Add chapter title
+            title = section.get('title', f'Chapter {idx}')
+            if insert_position < len(doc.paragraphs):
+                doc.paragraphs[insert_position].text = title
+                insert_position += 1
+            else:
+                new_para = doc.add_paragraph(title)
+                new_para.style = "Heading 1"
+                insert_position = len(doc.paragraphs)
+
+            # Add chapter content
+            content = section.get('content', [])
+            for line in content:
+                if isinstance(line, str) and line.strip():
+                    if insert_position < len(doc.paragraphs):
+                        doc.paragraphs[insert_position].text = line
+                        insert_position += 1
+                    else:
+                        new_para = doc.add_paragraph(line)
+                        new_para.style = "Normal"
+                        insert_position = len(doc.paragraphs)
+
+    def _find_main_content_start(self, doc):
+        """Find where main content should start in the template."""
+        # Look for the first chapter or main content area
+        for i, para in enumerate(doc.paragraphs):
+            text = para.text.strip().upper()
+            if 'BAB I' in text or 'BAB 1' in text or 'CHAPTER 1' in text:
+                return i
+            # Look for table of contents end
+            if 'DAFTAR ISI' in text and i < len(doc.paragraphs) - 1:
+                # Skip a few paragraphs after TOC
+                return min(i + 5, len(doc.paragraphs))
+
+        # Default to middle of document
+        return len(doc.paragraphs) // 2
 
     def _add_ai_main_content(self, doc: Document, user_data: Dict[str, Any], ai_content: str, structure_mapping: Dict[str, Any]) -> None:
         """Add main content using AI-enhanced formatting."""
@@ -853,12 +1321,25 @@ class CompleteThesisBuilder:
         
         # References/Bibliography
         references = user_data.get("references", []) if user_data and isinstance(user_data, dict) else []
-        generator.create_references(doc, references)
+        try:
+            generator.create_references(doc, references)
+        except Exception as e:
+            print(f"[WARNING] Failed to create references: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Appendices
         appendices = user_data.get("appendices", []) if user_data and isinstance(user_data, dict) else []
         if appendices:
-            generator.create_appendices(doc, appendices)
+            try:
+                # Ensure appendices is a list
+                if not isinstance(appendices, list):
+                    appendices = [appendices]
+                generator.create_appendices(doc, appendices)
+            except Exception as e:
+                print(f"[WARNING] Failed to create appendices: {e}")
+                import traceback
+                traceback.print_exc()
     
     def get_analysis_report(self) -> Dict[str, Any]:
         """Get comprehensive analysis report of template, content, and semantic structure."""

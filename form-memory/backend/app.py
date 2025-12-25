@@ -451,10 +451,15 @@ async def generate_document(
             )
             
             if not isinstance(result, dict):
-                raise Exception(f"Expected dict result, got {type(result).__name__}: {result}")
+                raise Exception(f"Expected dict result from create_complete_thesis, got {type(result).__name__}: {result}")
+            
+            if result.get("status") == "error":
+                error_msg = result.get("message", "Failed to create thesis")
+                error_details = result.get("error_details", "")
+                raise Exception(f"{error_msg}\n{error_details}" if error_details else error_msg)
             
             if result.get("status") != "success":
-                raise Exception(result.get("message", "Failed to create thesis"))
+                raise Exception(f"Unexpected status: {result.get('status')}, message: {result.get('message', 'Unknown error')}")
             
             # Clean up temporary content file
             if content_path is not None and content_path.exists():

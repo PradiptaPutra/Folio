@@ -96,6 +96,8 @@ class TemplateExecutor:
     
     def _find_anchor(self, rule: Dict[str, Any]) -> Optional[int]:
         """Find paragraph index matching rule criteria."""
+        if not isinstance(rule, dict):
+            return None
         anchor_type = rule.get('anchor_type')
         
         if anchor_type == 'style':

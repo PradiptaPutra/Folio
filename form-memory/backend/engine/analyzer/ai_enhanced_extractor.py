@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 from docx import Document
 from .content_extractor import ContentExtractor
+from ..ai.semantic_parser import SemanticParser
 from enum import Enum
 
 # Try to import AI semantic parser
@@ -48,11 +49,15 @@ class AIEnhancedContentExtractor:
         self.content_path = Path(content_path)
         self.is_docx = self.content_path.suffix.lower() == '.docx'
         self.use_ai = use_ai and AI_AVAILABLE and api_key is not None
+        self.api_key = api_key
         self.semantic_parser = SemanticParser(api_key=api_key) if self.use_ai else None
         
         # Load content - keep ContentExtractor object separately
         self._content_extractor = ContentExtractor(str(self.content_path))
         loaded_content = self._content_extractor._load_content()
+
+        # Store analyzed data for access by thesis builder
+        self.analyzed_data = None
         self.raw_text = self._extract_raw_text()
         self.sections = self._extract_sections()
     
@@ -110,32 +115,46 @@ class AIEnhancedContentExtractor:
             return self._extract_with_rules()
     
     def _extract_with_ai(self) -> List[Dict[str, Any]]:
-        """Extract sections using AI semantic analysis."""
+        """Extract sections using comprehensive AI content generation."""
         if not self.raw_text.strip():
             return []
-        
-        # Use semantic parser to analyze text
-        result = self.semantic_parser.parse(self.raw_text)
-        
-        if not result or "elements" not in result:
+
+        print(f"[AI] Starting comprehensive thesis content generation for {len(self.raw_text)} chars")
+
+        # Use comprehensive AI analysis to generate full thesis content
+        try:
+            analyzed_data = self._generate_comprehensive_thesis_content(self.raw_text)
+            sections = self._convert_analyzed_data_to_sections(analyzed_data)
+            print(f"[AI] Generated {len(sections)} sections with full content")
+            return sections
+        except Exception as e:
+            print(f"[AI] Comprehensive content generation failed: {e}")
+            print("[AI] Falling back to basic semantic parsing")
+
+        # Fallback to original semantic parsing
+        if self.semantic_parser:
+            result = self.semantic_parser.parse(self.raw_text)
+            if not result or "elements" not in result:
+                return self._extract_with_rules()
+        else:
             return self._extract_with_rules()
-        
-        # Convert semantic elements to sections
+
+        # Convert semantic elements to sections (original logic)
         sections = []
         current_section = None
         current_level = 0
-        
+
         for element in result.get("elements", []):
             elem_type = element.get("type", "paragraph")
             text = element.get("text", "").strip()
             confidence = element.get("confidence", 0.0)
-            
+
             # Determine section type and level
             if elem_type in ["chapter", "subchapter", "subsubchapter"]:
                 # Save previous section
                 if current_section:
                     sections.append(current_section)
-                
+
                 # Create new section
                 level_map = {
                     "chapter": 0,
@@ -143,35 +162,287 @@ class AIEnhancedContentExtractor:
                     "subsubchapter": 2
                 }
                 level = level_map.get(elem_type, 0)
-                
+
                 current_section = {
                     "title": text,
                     "level": level,
                     "content": [],
                     "type": elem_type,
+                    "ai_analyzed": False,
                     "ai_confidence": confidence,
-                    "ai_analyzed": True,
+                    "semantic_type": elem_type,
                 }
-                current_level = level
-            
-            elif elem_type == "paragraph" and current_section is not None:
-                # Add to current section
+            elif current_section is not None:
                 if text:
                     current_section["content"].append(text)
-        
-        # Don't forget last section
+
         if current_section:
             sections.append(current_section)
-        
-        # Classify sections semantically
-        for section in sections:
-            section["semantic_type"] = self._classify_section_semantic(
-                section["title"],
-                section.get("ai_confidence", 0.0)
+
+        return sections
+
+    def _generate_comprehensive_thesis_content(self, raw_text: str) -> Dict[str, Any]:
+        """Generate comprehensive thesis content using AI with detailed prompt."""
+        import json
+
+        prompt = f"""
+You are analyzing Indonesian thesis draft text and converting it into a structured format that matches a formal thesis template.
+
+Raw Text:
+{raw_text}
+
+Your task: Extract and EXPAND the content into proper academic format.
+
+Return ONLY valid JSON (no markdown code blocks, no explanations):
+
+{{
+  "metadata": {{
+    "title": "Extract or infer the full thesis title",
+    "author": "Author name if mentioned, otherwise 'John Doe'",
+    "nim": "Student ID if mentioned, otherwise '20523001'"
+  }},
+
+  "abstract": {{
+    "indonesian": "Write a complete Indonesian abstract (200-300 words) summarizing: research background, objectives, methods, and key findings. Make this substantive and academic.",
+    "english": "Write a complete English abstract (200-300 words) with the same content as Indonesian version.",
+    "keywords_id": ["kata kunci 1", "kata kunci 2", "kata kunci 3"],
+    "keywords_en": ["keyword 1", "keyword 2", "keyword 3"]
+  }},
+
+  "chapter1": {{
+    "latar_belakang": "Write 2-3 paragraphs (200-300 words) explaining the research background and importance in formal academic Indonesian.",
+    "rumusan_masalah": "Write 1-2 paragraphs (150-200 words) stating the research problems clearly.",
+    "tujuan_penelitian": "Write 1-2 paragraphs (150-200 words) describing research objectives.",
+    "manfaat_penelitian": "Write 1 paragraph (100-150 words) explaining research benefits.",
+    "batasan_masalah": "Write 1 paragraph (80-120 words) defining research scope and limitations."
+  }},
+
+  "chapter2": {{
+    "landasan_teori": "Write 2-3 paragraphs (200-300 words) covering fundamental theories related to the research topic.",
+    "penelitian_terkait": "Write 2 paragraphs (150-200 words) reviewing related research and studies.",
+    "kerangka_pemikiran": "Write 1-2 paragraphs (100-150 words) explaining the conceptual framework."
+  }},
+
+  "chapter3": {{
+    "desain_penelitian": "Write 1-2 paragraphs (150-200 words) describing the research design and approach.",
+    "metode_pengumpulan_data": "Write 2 paragraphs (150-200 words) detailing data collection methods.",
+    "metode_analisis": "Write 1-2 paragraphs (100-150 words) explaining analysis methods.",
+    "tools": "Write 1 paragraph (80-120 words) listing tools and technologies used."
+  }},
+
+  "chapter4": {{
+    "analisis_kebutuhan": "Write 2 paragraphs (150-200 words) analyzing system requirements.",
+    "perancangan_sistem": "Write 2-3 paragraphs (200-250 words) describing system design and architecture.",
+    "perancangan_interface": "Write 1-2 paragraphs (100-150 words) explaining interface design."
+  }},
+
+  "chapter5": {{
+    "implementasi": "Write 2 paragraphs (150-200 words) describing system implementation.",
+    "hasil_pengujian": "Write 2 paragraphs (150-200 words) presenting testing results.",
+    "pembahasan": "Write 2 paragraphs (150-200 words) discussing and interpreting results.",
+    "evaluasi": "Write 1-2 paragraphs (100-150 words) evaluating system performance."
+  }},
+
+  "chapter6": {{
+    "kesimpulan": "Write 2 paragraphs (150-200 words) drawing conclusions from the research.",
+    "saran": "Write 1-2 paragraphs (100-150 words) providing recommendations for future work."
+  }},
+
+  "references": [
+    "Author, A. (Year). Title of work. Publisher. (Format in APA style)",
+    "Author, B. (Year). Title. Journal Name, Volume(Issue), pages."
+  ]
+}}
+
+CRITICAL RULES - MUST FOLLOW:
+1. Write in formal academic Indonesian language
+2. Return ONLY valid JSON - no extra text, no explanations
+3. Keep content concise but complete (follow word limits above)
+4. Ensure proper JSON formatting with all braces and commas
+5. Do not truncate responses - complete all requested sections
+
+Example of GOOD content (what you should produce):
+"latar_belakang": "    Perkembangan teknologi informasi yang pesat telah membawa perubahan signifikan dalam berbagai aspek kehidupan, termasuk dalam pengelolaan sistem informasi perpustakaan. Perpustakaan sebagai pusat sumber informasi dan pengetahuan dituntut untuk terus berinovasi dalam memberikan layanan terbaik kepada penggunanya. Sistem manual yang selama ini digunakan dalam pengelolaan perpustakaan mulai menunjukkan berbagai keterbatasan, terutama dalam hal efisiensi waktu dan akurasi data.\n\n    Sistem informasi perpustakaan berbasis web menawarkan solusi yang efektif untuk mengatasi berbagai permasalahan dalam pengelolaan perpustakaan konvensional. Dengan memanfaatkan teknologi web, sistem dapat diakses dari mana saja dan kapan saja, memberikan kemudahan bagi pengguna dalam mencari informasi koleksi buku yang tersedia. Selain itu, sistem berbasis web juga memungkinkan pengelolaan data yang lebih terstruktur dan terintegrasi, sehingga meminimalkan kesalahan dalam proses administrasi.\n\n    Penelitian ini bertujuan untuk mengembangkan sistem informasi perpustakaan digital berbasis web yang dapat meningkatkan efisiensi layanan perpustakaan. Sistem yang dikembangkan diharapkan mampu mengotomatisasi proses peminjaman dan pengembalian buku, mengelola data anggota secara efektif, serta menyediakan fitur pencarian yang user-friendly. Dengan demikian, penelitian ini diharapkan dapat memberikan kontribusi nyata dalam modernisasi sistem perpustakaan di era digital."
+
+Example of BAD content (what you're currently producing):
+"latar_belakang": "Penelitian tentang sistem perpustakaan."
+
+DO NOT PRODUCE SHORT, INCOMPLETE CONTENT. EVERY FIELD MUST HAVE MULTIPLE SUBSTANTIAL PARAGRAPHS.
+"""
+
+        try:
+            # Call AI with comprehensive prompt using OpenAI client directly
+            from openai import OpenAI
+            client = OpenAI(api_key=self.api_key, base_url="https://openrouter.ai/api/v1")
+
+            response = client.chat.completions.create(
+                model="openai/gpt-oss-20b:free",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert at analyzing Indonesian thesis content and generating comprehensive academic paragraphs."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.3
             )
-        
-        return sections if sections else self._extract_with_rules()
-    
+
+            # Parse response
+            raw_response = response.choices[0].message.content if response.choices else str(response)
+
+            # Clean response (remove markdown formatting)
+            clean_response = raw_response.replace('```json', '').replace('```', '').strip() if raw_response else ""
+
+            # Parse JSON with better error handling
+            try:
+                analyzed_data = json.loads(clean_response)
+            except json.JSONDecodeError as e:
+                print(f"[ERROR] JSON parsing failed: {e}")
+                print(f"[ERROR] Raw response length: {len(clean_response)} chars")
+                print(f"[ERROR] Raw response preview: {clean_response[:300]}...")
+
+                # Try to fix common JSON issues
+                fixed_response = clean_response
+
+                # Remove any trailing content after the last valid brace
+                last_brace = fixed_response.rfind('}')
+                if last_brace > 0:
+                    fixed_response = fixed_response[:last_brace + 1]
+
+                # Try parsing the fixed response
+                try:
+                    analyzed_data = json.loads(fixed_response)
+                    print("[INFO] Successfully parsed JSON after fixing")
+                except json.JSONDecodeError as e2:
+                    print(f"[ERROR] JSON still invalid after fixing: {e2}")
+
+                    # Last resort: try to extract partial data
+                    try:
+                        # Extract metadata if available
+                        metadata_match = re.search(r'"metadata"\s*:\s*\{[^}]*\}', fixed_response)
+                        if metadata_match:
+                            metadata_str = metadata_match.group()
+                            metadata = json.loads(f"{{{metadata_str}}}")
+                            analyzed_data = {'metadata': metadata}
+                            print("[WARNING] Only partial data extracted (metadata only)")
+                        else:
+                            raise ValueError("Could not extract any valid JSON")
+                    except:
+                        raise ValueError("Could not extract JSON from AI response")
+
+            # VERIFY AI response has actual content
+            print(f"[VERIFY] AI response keys: {list(analyzed_data.keys())}")
+
+            for chapter_key in ['chapter1', 'chapter2', 'chapter3', 'chapter4', 'chapter5', 'chapter6']:
+                if chapter_key in analyzed_data:
+                    chapter_data = analyzed_data[chapter_key]
+                    print(f"\n[VERIFY] {chapter_key}:")
+                    for subsection, content in chapter_data.items():
+                        content_length = len(content) if content else 0
+                        preview = content[:100] if content else "[EMPTY]"
+                        print(f"  - {subsection}: {content_length} chars | Preview: {preview}...")
+
+                        # ALERT if content is too short
+                        if content_length < 200:
+                            print(f"  ⚠️  WARNING: {subsection} content is too short ({content_length} chars)")
+
+            # STOP if no content
+            if all(len(str(v)) < 100 for v in analyzed_data.get('chapter1', {}).values()):
+                raise ValueError("AI returned empty content - check AI prompt and response parsing")
+
+            # Store for access by thesis builder
+            self.analyzed_data = analyzed_data
+            print(f"[INFO] Stored analyzed_data with {len(analyzed_data)} top-level keys")
+
+            return analyzed_data
+
+        except Exception as e:
+            print(f"[AI] Comprehensive content generation failed: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+    def _convert_analyzed_data_to_sections(self, analyzed_data):
+        """Convert comprehensive analyzed data to section format."""
+        sections = []
+
+        # Chapter mapping
+        chapter_titles = {
+            1: "BAB I: PENDAHULUAN",
+            2: "BAB II: TINJAUAN PUSTAKA",
+            3: "BAB III: METODOLOGI PENELITIAN",
+            4: "BAB IV: ANALISIS DAN PERANCANGAN",
+            5: "BAB V: IMPLEMENTASI DAN PENGUJIAN",
+            6: "BAB VI: PENUTUP"
+        }
+
+        for chapter_num in range(1, 7):
+            chapter_key = f"chapter{chapter_num}"
+            if chapter_key in analyzed_data:
+                chapter_data = analyzed_data[chapter_key]
+
+                # Create section for each chapter
+                section_content = []
+                for subsection_key, subsection_content in chapter_data.items():
+                    if subsection_content and len(subsection_content.strip()) > 50:
+                        # Add subsection content
+                        section_content.extend(subsection_content.split('\n\n'))
+
+                if section_content:
+                    sections.append({
+                        "title": chapter_titles[chapter_num],
+                        "level": 0,
+                        "content": section_content,
+                        "type": "chapter",
+                        "ai_analyzed": True,
+                        "ai_confidence": 1.0,
+                        "semantic_type": "chapter"
+                    })
+
+        return sections
+
+    def _convert_analyzed_data_to_sections(self, analyzed_data):
+        """Convert comprehensive analyzed data to section format."""
+        sections = []
+
+        # Chapter mapping
+        chapter_titles = {
+            1: "BAB I: PENDAHULUAN",
+            2: "BAB II: TINJAUAN PUSTAKA",
+            3: "BAB III: METODOLOGI PENELITIAN",
+            4: "BAB IV: ANALISIS DAN PERANCANGAN",
+            5: "BAB V: IMPLEMENTASI DAN PENGUJIAN",
+            6: "BAB VI: PENUTUP"
+        }
+
+        for chapter_num in range(1, 7):
+            chapter_key = f"chapter{chapter_num}"
+            if chapter_key in analyzed_data:
+                chapter_data = analyzed_data[chapter_key]
+
+                # Create section for each chapter
+                section_content = []
+                for subsection_key, subsection_content in chapter_data.items():
+                    if subsection_content and len(subsection_content.strip()) > 50:
+                        # Add subsection content
+                        section_content.extend(subsection_content.split('\n\n'))
+
+                if section_content:
+                    sections.append({
+                        "title": chapter_titles[chapter_num],
+                        "level": 0,
+                        "content": section_content,
+                        "type": "chapter",
+                        "ai_analyzed": True,
+                        "ai_confidence": 1.0,
+                        "semantic_type": "chapter"
+                    })
+
+        return sections
+
     def _extract_with_rules(self) -> List[Dict[str, Any]]:
         """Extract sections using rule-based patterns (fallback)."""
         sections = []
