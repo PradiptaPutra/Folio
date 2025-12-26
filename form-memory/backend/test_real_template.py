@@ -47,7 +47,18 @@ def test_real_template():
         }
     )
 
-    print("Result:", result)
+    # Handle Unicode characters safely
+    try:
+        print("Result:", result)
+    except UnicodeEncodeError:
+        # Safe print for Windows console
+        safe_result = {}
+        for k, v in result.items():
+            if isinstance(v, str):
+                safe_result[k] = v.encode('ascii', 'replace').decode('ascii')
+            else:
+                safe_result[k] = v
+        print("Result:", safe_result)
     if result['status'] == 'success':
         output_file = Path(result['output_file'])
         print(f"Output file size: {output_file.stat().st_size} bytes")

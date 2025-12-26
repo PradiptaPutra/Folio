@@ -19,17 +19,38 @@ export function TemplateGenerator() {
   const [contentFile, setContentFile] = useState<File | null>(null)
   const [rawText, setRawText] = useState<string>('')
 
-  // Metadata State
+  // Comprehensive Metadata State
   const [metadata, setMetadata] = useState({
+    // Basic Information
     judul: '',
     penulis: '',
     nim: '',
+
+    // Academic Information
     universitas: '',
-    dosen_pembimbing: '',
+    fakultas: '',
+    program_studi: '',
+    jurusan: '',
+
+    // Academic Supervision
+    dosen_pembimbing: '', // Primary supervisor
+    dosen_pembimbing2: '', // Secondary supervisor (if any)
+    penguji1: '', // First examiner
+    penguji2: '', // Second examiner
+
+    // Location and Time
+    kota: '', // City
     tahun: new Date().getFullYear().toString(),
+
+    // Content
     abstrak_teks: '',
     abstrak_en_teks: '',
-    kata_kunci: ''
+    kata_kunci: '',
+
+    // Optional advanced fields
+    gelar: '', // Degree (Sarjana Komputer, etc.)
+    tanggal_sidang: '', // Defense date
+    nomor_skripsi: '' // Thesis number
   })
 
   // Processing State
@@ -590,6 +611,102 @@ BAB II: LITERATURE REVIEW
                   value={metadata.universitas}
                   onChange={(e) => handleInputChange('universitas', e.target.value)}
                   placeholder="Universitas Indonesia"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Faculty */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Faculty</label>
+                <input
+                  type="text"
+                  value={metadata.fakultas}
+                  onChange={(e) => handleInputChange('fakultas', e.target.value)}
+                  placeholder="Fakultas Teknik"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Study Program */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Study Program</label>
+                <input
+                  type="text"
+                  value={metadata.program_studi}
+                  onChange={(e) => handleInputChange('program_studi', e.target.value)}
+                  placeholder="Teknik Informatika"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Department */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Department</label>
+                <input
+                  type="text"
+                  value={metadata.jurusan}
+                  onChange={(e) => handleInputChange('jurusan', e.target.value)}
+                  placeholder="Informatika"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Secondary Advisor */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Secondary Advisor (optional)</label>
+                <input
+                  type="text"
+                  value={metadata.dosen_pembimbing2}
+                  onChange={(e) => handleInputChange('dosen_pembimbing2', e.target.value)}
+                  placeholder="Dr. John Smith"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* First Examiner */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">First Examiner (optional)</label>
+                <input
+                  type="text"
+                  value={metadata.penguji1}
+                  onChange={(e) => handleInputChange('penguji1', e.target.value)}
+                  placeholder="Prof. Dr. Ahmad Rahman"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Second Examiner */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Second Examiner (optional)</label>
+                <input
+                  type="text"
+                  value={metadata.penguji2}
+                  onChange={(e) => handleInputChange('penguji2', e.target.value)}
+                  placeholder="Dr. Siti Nurhaliza"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* City */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">City</label>
+                <input
+                  type="text"
+                  value={metadata.kota}
+                  onChange={(e) => handleInputChange('kota', e.target.value)}
+                  placeholder="Yogyakarta"
+                  className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              {/* Degree */}
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Degree</label>
+                <input
+                  type="text"
+                  value={metadata.gelar}
+                  onChange={(e) => handleInputChange('gelar', e.target.value)}
+                  placeholder="Sarjana Komputer"
                   className="w-full px-4 py-2 border border-border rounded focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>

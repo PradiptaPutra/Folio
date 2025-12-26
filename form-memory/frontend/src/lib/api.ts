@@ -92,16 +92,37 @@ export interface EnforcementResponse {
 }
 
 export interface FrontmatterData {
+  // Basic Information
   judul?: string
   penulis?: string
   nim?: string
+
+  // Academic Information
   universitas?: string
-  tahun?: number | string
+  fakultas?: string
+  program_studi?: string
+  jurusan?: string
+
+  // Academic Supervision
   dosen_pembimbing?: string
+  dosen_pembimbing2?: string
+  penguji1?: string
+  penguji2?: string
+
+  // Location and Time
+  kota?: string
+  tahun?: number | string
+
+  // Content
   abstrak_id?: string
   abstrak_teks?: string
   abstrak_en_teks?: string
   kata_kunci?: string
+
+  // Optional advanced fields
+  gelar?: string
+  tanggal_sidang?: string
+  nomor_skripsi?: string
 }
 
 export interface TemplateAnalysis {
@@ -437,11 +458,41 @@ export async function generateFromTemplate(
     formData.append('use_ai_analysis', String(useAIAnalysis))
 
     if (includeFrontmatter && frontmatterData) {
+      // Basic information
+      formData.append('title', frontmatterData.judul || '')
+      formData.append('author', frontmatterData.penulis || '')
+      formData.append('nim', frontmatterData.nim || '')
+
+      // Academic information
+      formData.append('university', frontmatterData.universitas || '')
+      formData.append('faculty', frontmatterData.fakultas || '')
+      formData.append('program', frontmatterData.program_studi || '')
+      formData.append('department', frontmatterData.jurusan || '')
+
+      // Academic supervision
+      formData.append('supervisor1', frontmatterData.dosen_pembimbing || '')
+      formData.append('supervisor2', frontmatterData.dosen_pembimbing2 || '')
+      formData.append('examiner1', frontmatterData.penguji1 || '')
+      formData.append('examiner2', frontmatterData.penguji2 || '')
+
+      // Location and time
+      formData.append('city', frontmatterData.kota || '')
+      formData.append('year', String(frontmatterData.tahun || ''))
+
+      // Content
+      formData.append('abstract_id', frontmatterData.abstrak_teks || '')
+      formData.append('abstract_en', frontmatterData.abstrak_en_teks || '')
+      formData.append('keywords', frontmatterData.kata_kunci || '')
+
+      // Optional advanced fields
+      formData.append('degree', frontmatterData.gelar || '')
+      formData.append('defense_date', frontmatterData.tanggal_sidang || '')
+      formData.append('thesis_number', frontmatterData.nomor_skripsi || '')
+
+      // Legacy compatibility
       formData.append('judul', frontmatterData.judul || '')
       formData.append('penulis', frontmatterData.penulis || '')
-      formData.append('nim', frontmatterData.nim || '')
       formData.append('universitas', frontmatterData.universitas || '')
-      formData.append('tahun', String(frontmatterData.tahun || ''))
       formData.append('dosen_pembimbing', frontmatterData.dosen_pembimbing || 'Nama Dosen Pembimbing')
       formData.append('abstrak_id', frontmatterData.abstrak_id || '')
       formData.append('abstrak_teks', frontmatterData.abstrak_teks || '')

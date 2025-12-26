@@ -5,6 +5,7 @@ from pathlib import Path
 import os
 import json
 import time
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -353,7 +354,25 @@ async def generate_document(
     kata_kunci: str = Form(None),
     output_format: str = Form("docx"),
     dosen_pembimbing: str = Form(None),
-    use_ai_analysis: str = Form("true")
+    use_ai_analysis: str = Form("true"),
+    universitas_config: str = Form("indonesian_standard", description="University template configuration"),
+    # Comprehensive metadata fields from frontend
+    university: Optional[str] = Form(None),
+    faculty: Optional[str] = Form(None),
+    program: Optional[str] = Form(None),
+    department: Optional[str] = Form(None),
+    supervisor1: Optional[str] = Form(None),
+    supervisor2: Optional[str] = Form(None),
+    examiner1: Optional[str] = Form(None),
+    examiner2: Optional[str] = Form(None),
+    city: Optional[str] = Form(None),
+    year: Optional[str] = Form(None),
+    degree: Optional[str] = Form(None),
+    defense_date: Optional[str] = Form(None),
+    thesis_number: Optional[str] = Form(None),
+    abstract_id: Optional[str] = Form(None),
+    abstract_en: Optional[str] = Form(None),
+    keywords: Optional[str] = Form(None)
 ):
     """
     Unified document generation endpoint - NOW CREATES COMPLETE THESIS with AI!
@@ -422,6 +441,7 @@ async def generate_document(
             
             # Prepare user data for complete thesis builder
             user_data = {
+                # Basic fields (legacy compatibility)
                 "title": judul or "JUDUL SKRIPSI",
                 "author": penulis or "Nama Penulis",
                 "nim": nim or "NIM",
@@ -431,6 +451,24 @@ async def generate_document(
                 "abstract_id": abstrak_teks or abstrak_id or "",
                 "abstract_en": abstrak_en_teks or "",
                 "keywords": kata_kunci.split(',') if kata_kunci else [],
+
+                # Comprehensive metadata fields for advanced replacement
+                "university": university or universitas or "",
+                "faculty": faculty or "",
+                "program": program or "",
+                "department": department or "",
+                "supervisor1": supervisor1 or dosen_pembimbing or "",
+                "supervisor2": supervisor2 or "",
+                "examiner1": examiner1 or "",
+                "examiner2": examiner2 or "",
+                "city": city or "",
+                "year": year or tahun or "",
+                "degree": degree or "",
+                "defense_date": defense_date or "",
+                "thesis_number": thesis_number or "",
+                "abstract_id": abstract_id or abstrak_id or abstrak_teks or "",
+                "abstract_en": abstract_en or abstrak_en_teks or "",
+                "keywords": keywords or kata_kunci or "",
             }
             
             # Create unique content file for thesis builder
@@ -466,12 +504,16 @@ async def generate_document(
                 content_path.unlink()
 
             # Return JSON response with filename for frontend to use
+            # Use the actual output path returned by the builder (not our initial path)
+            actual_output_path = Path(result.get("output_file", str(output_path)))
+            actual_filename = actual_output_path.name
+
             return {
                 "status": "success",
                 "message": "Thesis document generated successfully",
-                "filename": output_filename,
-                "file_path": str(output_path),
-                "file_size": output_path.stat().st_size if output_path.exists() else 0
+                "filename": actual_filename,
+                "file_path": str(actual_output_path),
+                "file_size": result.get("file_size", 0)
             }
         
         else:
@@ -768,26 +810,68 @@ async def universal_formatter_info():
     }
 
 
+@app.get("/test-connection")
+async def test_connection():
+    """Simple endpoint to test frontend-backend connection"""
+    return {"status": "ok", "message": "Backend is reachable", "timestamp": "2024-12-26"}
+
+# Note: The /api/download endpoint is handled by Vite proxy rewriting /api/download to /download
+
 @app.get("/download/{filename}")
 async def download_generated_document(filename: str):
     """
     Download a generated document by filename.
     """
     try:
+        print(f"DOWNLOAD REQUEST: '{filename}'")
+
         # Find the generated file
         output_dir = BASE_DIR / "storage" / "outputs"
         docx_file = output_dir / filename
 
+        print(f"Looking in: {output_dir}")
+        print(f"File exists: {docx_file.exists()}")
+
+        # If exact filename doesn't exist, try to find a similar recent file
         if not docx_file.exists():
+            print("Exact file not found, looking for alternatives...")
+            all_docx = list(output_dir.glob("*.docx"))
+            recent_files = sorted(all_docx, key=lambda x: x.stat().st_mtime, reverse=True)
+
+            print(f"Found {len(recent_files)} total .docx files")
+            print(f"Most recent: {[f.name for f in recent_files[:3]]}")
+
+            # Check if any recent file matches the pattern
+            base_name = filename.replace('.docx', '').rsplit('_', 1)[0] if '_' in filename else filename.replace('.docx', '')
+            print(f"Looking for base name: '{base_name}'")
+
+            for recent_file in recent_files[:10]:  # Check last 10 files
+                file_size = recent_file.stat().st_size
+                if base_name in recent_file.name and file_size > 1000000:  # >1MB
+                    print(f"Found matching file: {recent_file.name} ({file_size} bytes)")
+                    docx_file = recent_file
+                    break
+
+        if not docx_file.exists():
+            print(f"File still not found: {docx_file}")
+            all_files = list(output_dir.glob("*"))
+            print(f"All files in output dir: {[f.name for f in all_files]}")
             raise HTTPException(status_code=404, detail="Generated document not found")
 
         # Return file for download
         from fastapi.responses import FileResponse
-        return FileResponse(
+        response = FileResponse(
             docx_file,
             filename=filename,
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
+
+        # Add CORS headers explicitly
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+
+        return response
 
     except Exception as e:
         import traceback
@@ -1031,7 +1115,8 @@ async def generate_perfect_thesis(
             output_path,
             use_ai=options_dict.get("use_ai", True),
             include_frontmatter=options_dict.get("include_frontmatter", True),
-            api_key=OPENROUTER_API_KEY
+            api_key=OPENROUTER_API_KEY,
+            university_config=options_dict.get("university_config", "indonesian_standard")
         )
 
         result = builder.build(user_data_dict)

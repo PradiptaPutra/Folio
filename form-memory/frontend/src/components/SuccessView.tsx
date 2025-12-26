@@ -1,6 +1,7 @@
 import { Check, Eye, Download, FileText, Edit } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
+import { WordStylePreview } from './WordStylePreview'
 
 interface SuccessViewProps {
   fileName: string
@@ -74,55 +75,57 @@ export function SuccessView({
         </Button>
       </div>
 
-      {/* Preview Modal */}
-      {showPreview && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b">
-              <h3 className="text-lg font-semibold">Document Preview</h3>
-              <button
-                onClick={() => setShowPreview(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="p-4">
-              {previewContent ? (
-                <iframe
-                  srcDoc={previewContent}
-                  className="w-full h-[70vh] border rounded"
-                  title="Document Preview"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-[70vh] text-gray-500">
-                  <div className="text-center">
-                    <FileText className="mx-auto h-16 w-16 text-blue-500" />
-                    <h3 className="mt-4 text-lg font-medium text-gray-900">Document Preview</h3>
-                    <p className="mt-2 text-sm text-gray-600 max-w-md">
-                      Your thesis document has been successfully generated and formatted.
-                    </p>
-                    <div className="mt-6 p-4 bg-blue-50 rounded-lg">
-                      <p className="text-sm text-blue-800 font-medium">Ready to Download</p>
-                      <p className="mt-1 text-sm text-blue-600">
-                        The document is fully formatted with your university's template, including all sections, chapters, and proper formatting.
-                      </p>
-                    </div>
-                    <div className="mt-4 flex justify-center gap-3">
-                      <Button onClick={onDownload} className="flex items-center gap-2">
-                        <Download className="w-4 h-4" />
-                        Download DOCX
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+       {/* Preview Modal */}
+       {showPreview && previewContent && (
+         <WordStylePreview
+           content={previewContent}
+           title="Generated Document Preview"
+           onClose={() => setShowPreview(false)}
+           onEdit={onEdit}
+           showEditButton={!!onEdit}
+         />
+       )}
+
+       {showPreview && !previewContent && (
+         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+           <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden">
+             <div className="flex items-center justify-between p-4 border-b">
+               <h3 className="text-lg font-semibold">Document Preview</h3>
+               <button
+                 onClick={() => setShowPreview(false)}
+                 className="text-gray-500 hover:text-gray-700"
+               >
+                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                 </svg>
+               </button>
+             </div>
+             <div className="p-4">
+               <div className="flex items-center justify-center h-[70vh] text-gray-500">
+                 <div className="text-center">
+                   <FileText className="mx-auto h-16 w-16 text-blue-500" />
+                   <h3 className="mt-4 text-lg font-medium text-gray-900">Document Preview</h3>
+                   <p className="mt-2 text-sm text-gray-600 max-w-md">
+                     Your thesis document has been successfully generated and formatted.
+                   </p>
+                   <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                     <p className="text-sm text-blue-800 font-medium">Ready to Download</p>
+                     <p className="mt-1 text-sm text-blue-600">
+                       The document is fully formatted with your university's template, including all sections, chapters, and proper formatting.
+                     </p>
+                   </div>
+                   <div className="mt-4 flex justify-center gap-3">
+                     <Button onClick={onDownload} className="flex items-center gap-2">
+                       <Download className="w-4 h-4" />
+                       Download DOCX
+                     </Button>
+                   </div>
+                 </div>
+               </div>
+             </div>
+           </div>
+         </div>
+       )}
     </div>
   )
 }

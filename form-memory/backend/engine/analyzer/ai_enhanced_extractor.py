@@ -124,8 +124,17 @@ class AIEnhancedContentExtractor:
         # Use comprehensive AI analysis to generate full thesis content
         try:
             analyzed_data = self._generate_comprehensive_thesis_content(self.raw_text)
+            
+            # Ensure analyzed_data is a dict
+            if isinstance(analyzed_data, list):
+                print("[WARNING] AI returned a list of sections instead of a data dict, attempting to convert...")
+                # If it's already sections, we just use them but we still need analyzed_data for the builder
+                self.sections = analyzed_data
+                return analyzed_data
+
             sections = self._convert_analyzed_data_to_sections(analyzed_data)
             print(f"[AI] Generated {len(sections)} sections with full content")
+            self.sections = sections
 
             # DEBUG: Check if analyzed_data has content
             if hasattr(self, 'analyzed_data') and self.analyzed_data:
@@ -275,7 +284,9 @@ Return ONLY valid JSON:
   ]
 }}
 
-IMPORTANT: Return ONLY the JSON object, no extra text or formatting.
+IMPORTANT: Return ONLY the JSON object, NO extra text, no markdown code blocks, just pure JSON.
+The content must be in Indonesian, except for keywords_en and abstract.english.
+Expand the raw text into professional, academic paragraphs. If the draft is sparse, use your knowledge to fill in standard academic details for a Computer Science/Informatika thesis.
 """
 
         try:
@@ -283,26 +294,60 @@ IMPORTANT: Return ONLY the JSON object, no extra text or formatting.
             from openai import OpenAI
             client = OpenAI(api_key=self.api_key, base_url="https://openrouter.ai/api/v1")
 
-            response = client.chat.completions.create(
-                model="openai/gpt-oss-20b:free",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert at analyzing Indonesian thesis content and generating comprehensive academic paragraphs."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.3
-            )
+            models_to_try = [
+                "google/gemini-2.0-flash-exp:free",
+                "google/gemini-2.0-flash-exp",
+                "google/gemini-flash-1.5-exp",
+                "meta-llama/llama-3.1-8b-instruct:free",
+                "meta-llama/llama-3.1-70b-instruct:free",
+                "mistralai/mistral-7b-instruct:free",
+                "deepseek/deepseek-chat:free",
+                "microsoft/phi-3-medium-128k-instruct:free"
+            ]
+            
+            last_error = None
+            response = None
+            
+            for model_name in models_to_try:
+                try:
+                    print(f"[AI] Attempting content generation with model: {model_name}")
+                    response = client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "You are an expert at analyzing Indonesian thesis content and generating comprehensive academic paragraphs."
+                            },
+                            {
+                                "role": "user",
+                                "content": prompt
+                            }
+                        ],
+                        temperature=0.3
+                    )
+                    break # Success!
+                except Exception as e:
+                    last_error = e
+                    print(f"[AI] Model {model_name} failed: {e}")
+                    # Continue to next model regardless of error type (429, 404, etc.)
+                    continue
+            
+            if not response:
+                print(f"[ERROR] All AI models failed. Last error: {last_error}")
+                raise last_error or ValueError("All AI models failed to respond")
 
             # Parse response
             raw_response = response.choices[0].message.content if response.choices else str(response)
+            if not raw_response:
+                raise ValueError("Empty response from AI")
 
-            # Clean response (remove markdown formatting)
-            clean_response = raw_response.replace('```json', '').replace('```', '').strip() if raw_response else ""
+            # Improved Clean response: find the first { and last }
+            import re
+            json_match = re.search(r'(\{.*\})', raw_response, re.DOTALL)
+            if json_match:
+                clean_response = json_match.group(1)
+            else:
+                clean_response = raw_response.replace('```json', '').replace('```', '').strip()
 
             # Parse JSON with better error handling
             try:
@@ -338,8 +383,10 @@ IMPORTANT: Return ONLY the JSON object, no extra text or formatting.
                             print("[WARNING] Only partial data extracted (metadata only)")
                         else:
                             raise ValueError("Could not extract any valid JSON")
-                    except:
-                        raise ValueError("Could not extract JSON from AI response")
+                    except Exception as e3:
+                        print(f"[ERROR] Fatal JSON extraction error: {e3}")
+                        print(f"[DEBUG] Full Raw AI Response:\n{raw_response}")
+                        raise ValueError(f"Could not extract JSON from AI response: {str(e2)}")
 
             # VERIFY AI response has actual content
             print(f"[VERIFY] AI response keys: {list(analyzed_data.keys())}")
@@ -351,7 +398,12 @@ IMPORTANT: Return ONLY the JSON object, no extra text or formatting.
                     for subsection, content in chapter_data.items():
                         content_length = len(content) if content else 0
                         preview = content[:100] if content else "[EMPTY]"
-                        print(f"  - {subsection}: {content_length} chars | Preview: {preview}...")
+                        # Handle Unicode characters safely
+                        try:
+                            print(f"  - {subsection}: {content_length} chars | Preview: {preview}...")
+                        except UnicodeEncodeError:
+                            safe_preview = preview.encode('ascii', 'replace').decode('ascii')
+                            print(f"  - {subsection}: {content_length} chars | Preview: {safe_preview}...")
 
                         # ALERT if content is too short
                         if content_length < 200:
@@ -376,77 +428,135 @@ IMPORTANT: Return ONLY the JSON object, no extra text or formatting.
             print("[AI] Generating emergency fallback content...")
             fallback_data = self._generate_fallback_content(self.raw_text)
             self.analyzed_data = fallback_data
-            sections = self._convert_analyzed_data_to_sections(fallback_data)
-            print(f"[AI] Emergency fallback generated {len(sections)} sections with {sum(len(str(s.get('content', []))) for s in sections)} chars")
-            return sections
+            
+            # Return the dict, NOT the converted sections, to keep return type consistent
+            return fallback_data
 
     def _generate_fallback_content(self, raw_text: str) -> Dict[str, Any]:
         """Generate basic fallback content when AI completely fails."""
         print("[FALLBACK] Creating basic content structure...")
 
-        # Extract basic info from raw text
-        title = "Pengembangan Sistem Informasi Berbasis Web"
-        author = "Mahasiswa"
-        nim = "20523001"
+        # Try to extract basic info from raw text, fallback to generic values
+        title = "Judul Skripsi"  # Generic fallback
+        title = ""  # Initialize as empty to allow detection
+        author = ""  # Initialize as empty to allow detection
+        nim = ""  # Initialize as empty to allow detection
 
-        # Look for title in text
+        # Look for title, author, nim in text
         lines = raw_text.split('\n')
-        for line in lines[:10]:  # Check first 10 lines
-            line = line.strip()
-            if len(line) > 20 and not line.startswith('BAB'):
-                title = line
-                break
+        for line in lines[:30]:  # Check first 30 lines
+            line_strip = line.strip()
+            if not line_strip: continue
+            
+            # Author/NIM detection
+            if not author and any(k in line_strip.upper() for k in ['NAMA', 'NAME', 'PENULIS', 'BY:']):
+                # Extract value after colon if present
+                if ':' in line_strip:
+                    val = line_strip.split(':')[-1].strip()
+                    # Avoid extracting program/faculty as author
+                    if not any(k in val.upper() for k in ['TEKNIK', 'INFORMATIKA', 'SISTEM', 'ILMU', 'FAKULTAS', 'PROGRAM']):
+                        author = val
+                elif len(line_strip.split()) <= 4:
+                    if not any(k in line_strip.upper() for k in ['TEKNIK', 'INFORMATIKA', 'SISTEM', 'ILMU', 'FAKULTAS', 'PROGRAM']):
+                        author = line_strip
+            
+            if not nim and any(k in line_strip.upper() for k in ['NIM', 'ID', 'BP', 'NOMOR INDUK']):
+                if ':' in line_strip:
+                    val = line_strip.split(':')[-1].strip()
+                    nim = ''.join(filter(str.isdigit, val))
+                else:
+                    nim = ''.join(filter(str.isdigit, line_strip))
 
-        # Create basic content for each chapter
+            # Improved Title Detection: Look for something that looks like a title
+            # (Short-medium length, not a header, not background text)
+            if not title and 10 < len(line_strip) < 150:
+                is_trash = any(k in line_strip.upper() for k in ['BAB', 'CHAPTER', 'DAFTAR', 'HALAMAN', 'SKRIPSI', 'TEKNIK', 'UNIVERSITAS', 'LATAR BELAKANG'])
+                # Also check if it's the start of a sentence like "Latar belakang..."
+                is_sentence = line_strip.lower().startswith(('latar belakang', 'penelitian ini', 'dalam era'))
+                
+                if not is_trash and not is_sentence:
+                    title = line_strip
+
+        # Final cleanup for Gilang Gilang type issues
+        if author:
+            words = author.split()
+            if len(words) >= 2 and words[0] == words[1]:
+                author = words[0] # Gilang Gilang -> Gilang
+        
+        # Build chapter content by trying to find actual text in raw_text
+        def get_text_between(start_patterns, end_patterns):
+            start_idx = -1
+            for pattern in start_patterns:
+                for i, line in enumerate(lines):
+                    if re.search(pattern, line.upper()):
+                        start_idx = i + 1; break
+                if start_idx != -1: break
+            
+            if start_idx == -1: return ""
+            
+            end_idx = len(lines)
+            for pattern in end_patterns:
+                for i in range(start_idx, len(lines)):
+                    if re.search(pattern, lines[i].upper()):
+                        end_idx = i; break
+                if end_idx != len(lines): break
+            
+            content = " ".join(l.strip() for l in lines[start_idx:end_idx] if l.strip())
+            return content if len(content) > 100 else ""
+
+        # Chapter 1 extraction
+        ch1_latar = get_text_between(['LATAR BELAKANG'], ['RUMUSAN MASALAH', 'TUJUAN PENELITIAN', 'BAB II'])
+        ch1_rumusan = get_text_between(['RUMUSAN MASALAH'], ['TUJUAN PENELITIAN', 'BAB II'])
+        
+        # Create basic content for each chapter, mixed with extracted info
         fallback_data = {
             'metadata': {
-                'title': title,
-                'author': author,
-                'nim': nim
+                'title': title or "Judul Skripsi",
+                'author': author or "Nama Mahasiswa",
+                'nim': nim or "NIM"
             },
             'abstract': {
-                'indonesian': 'Penelitian ini membahas pengembangan sistem informasi berbasis web yang bertujuan untuk meningkatkan efisiensi dan efektivitas dalam berbagai bidang. Sistem yang dikembangkan menggunakan teknologi web modern dengan antarmuka yang user-friendly dan fitur-fitur yang lengkap.',
-                'english': 'This research discusses the development of a web-based information system aimed at improving efficiency and effectiveness in various fields. The developed system uses modern web technology with a user-friendly interface and complete features.',
-                'keywords_id': ['sistem informasi', 'teknologi web', 'efisiensi'],
-                'keywords_en': ['information system', 'web technology', 'efficiency']
+                'indonesian': get_text_between(['ABSTRAK', 'SARI'], ['ABSTRACT', 'BAB I']) or 'Penelitian ini bertujuan untuk mengembangkan solusi yang dapat meningkatkan efisiensi dan efektivitas dalam bidang yang diteliti. Pendekatan yang digunakan mengintegrasikan berbagai metodologi dan teknologi terkini untuk mencapai hasil yang optimal.',
+                'english': get_text_between(['ABSTRACT'], ['KATA KUNCI', 'BAB I']) or 'This research aims to develop solutions that can improve efficiency and effectiveness in the studied field. The approach used integrates various current methodologies and technologies to achieve optimal results.',
+                'keywords_id': ['penelitian', 'efisiensi', 'pengembangan'],
+                'keywords_en': ['research', 'efficiency', 'development']
             },
             'chapter1': {
-                'latar_belakang': 'Perkembangan teknologi informasi yang pesat telah membawa perubahan signifikan dalam berbagai aspek kehidupan manusia. Di era digital saat ini, organisasi dan institusi dituntut untuk mengadopsi teknologi informasi guna meningkatkan kualitas layanan dan efisiensi operasional.',
-                'rumusan_masalah': 'Berdasarkan latar belakang di atas, rumusan masalah penelitian ini adalah bagaimana merancang dan mengimplementasikan sistem informasi berbasis web yang efektif dan efisien.',
-                'tujuan_penelitian': 'Tujuan dari penelitian ini adalah mengembangkan sistem informasi berbasis web yang dapat memenuhi kebutuhan pengguna dan meningkatkan kualitas layanan.',
-                'manfaat_penelitian': 'Manfaat penelitian ini adalah memberikan kontribusi dalam pengembangan teknologi informasi dan memberikan solusi praktis untuk meningkatkan efisiensi organisasi.',
-                'batasan_masalah': 'Penelitian ini terbatas pada pengembangan sistem informasi untuk konteks tertentu dengan batasan teknologi dan waktu yang tersedia.'
+                'latar_belakang': ch1_latar or 'Perkembangan teknologi dan metodologi penelitian telah membawa perubahan signifikan dalam berbagai bidang keilmuan. Di era saat ini, organisasi dan institusi dituntut untuk mengadopsi pendekatan yang lebih efektif guna meningkatkan kualitas layanan dan efisiensi operasional.',
+                'rumusan_masalah': ch1_rumusan or 'Berdasarkan latar belakang di atas, rumusan masalah penelitian ini adalah bagaimana mengembangkan solusi yang efektif dan efisien untuk mengatasi permasalahan yang telah diidentifikasi.',
+                'tujuan_penelitian': 'Tujuan dari penelitian ini adalah mengembangkan solusi yang dapat memenuhi kebutuhan pengguna dan memberikan kontribusi yang bermakna bagi pengembangan keilmuan.',
+                'manfaat_penelitian': 'Manfaat penelitian ini adalah memberikan kontribusi teoritis dan praktis dalam pengembangan pengetahuan serta memberikan solusi untuk permasalahan yang dihadapi.',
+                'batasan_masalah': 'Penelitian ini terbatas pada ruang lingkup tertentu dengan mempertimbangkan keterbatasan sumber daya, waktu, and metodologi yang tersedia.'
             },
             'chapter2': {
-                'landasan_teori': 'Landasan teori penelitian ini mencakup konsep sistem informasi, teknologi web, dan metodologi pengembangan sistem. Sistem informasi merupakan kumpulan komponen yang saling berinteraksi untuk mencapai tujuan organisasi.',
-                'penelitian_terkait': 'Penelitian terkait menunjukkan bahwa pengembangan sistem informasi berbasis web telah banyak dilakukan dan memberikan manfaat signifikan dalam meningkatkan efisiensi dan efektivitas.',
-                'kerangka_pemikiran': 'Kerangka pemikiran penelitian ini menggunakan pendekatan sistem untuk menganalisis dan mengembangkan solusi yang sesuai dengan kebutuhan pengguna.'
+                'landasan_teori': get_text_between(['BAB II', 'LANDASAN TEORI'], ['PENELITIAN TERKAIT', 'BAB III']) or 'Landasan teori penelitian ini mencakup konsep-konsep dasar yang relevan dengan bidang penelitian. Teori-teori ini memberikan kerangka berpikir untuk memahami dan menganalisis permasalahan yang diteliti.',
+                'penelitian_terkait': 'Penelitian terkait menunjukkan bahwa berbagai pendekatan telah dilakukan untuk mengatasi permasalahan serupa. Hasil-hasil penelitian sebelumnya memberikan wawasan penting untuk pengembangan penelitian ini.',
+                'kerangka_pemikiran': 'Kerangka pemikiran penelitian ini menggunakan pendekatan yang sistematis untuk menganalisis dan mengembangkan solusi yang sesuai dengan kebutuhan dan konteks penelitian.'
             },
             'chapter3': {
-                'desain_penelitian': 'Desain penelitian ini menggunakan metode pengembangan sistem dengan pendekatan yang sistematis dan terstruktur.',
-                'metode_pengumpulan_data': 'Metode pengumpulan data menggunakan observasi, wawancara, dan studi dokumentasi untuk mendapatkan data yang diperlukan dalam pengembangan sistem.',
-                'metode_analisis': 'Metode analisis data menggunakan analisis deskriptif dan verifikasi untuk memastikan kebenaran dan kevalidan data yang diperoleh.',
-                'tools': 'Tools yang digunakan dalam pengembangan sistem meliputi bahasa pemrograman web, database management system, dan framework pengembangan aplikasi.'
+                'desain_penelitian': get_text_between(['BAB III', 'METODOLOGI'], ['DAFTAR PUSTAKA', 'BAB IV']) or 'Desain penelitian ini menggunakan metode yang sesuai dengan tujuan dan karakteristik permasalahan yang diteliti. Pendekatan yang digunakan telah dipilih berdasarkan pertimbangan teoritis dan praktis.',
+                'metode_pengumpulan_data': 'Metode pengumpulan data menggunakan teknik yang sesuai untuk mendapatkan informasi yang diperlukan. Data dikumpulkan melalui berbagai sumber yang relevan dan dapat dipertanggungjawabkan.',
+                'metode_analisis': 'Metode analisis data menggunakan teknik yang sesuai untuk mengolah dan menginterpretasikan data yang diperoleh. Analisis dilakukan secara sistematis dan menggunakan pendekatan yang valid.',
+                'tools': 'Tools yang digunakan dalam penelitian ini meliputi berbagai perangkat lunak dan metodologi yang sesuai dengan kebutuhan analisis dan pengolahan data.'
             },
             'chapter4': {
-                'analisis_kebutuhan': 'Analisis kebutuhan menunjukkan bahwa sistem informasi yang dikembangkan harus memiliki fitur-fitur dasar yang dapat memenuhi kebutuhan pengguna.',
-                'perancangan_sistem': 'Perancangan sistem mencakup desain arsitektur, desain database, dan desain antarmuka yang sesuai dengan kebutuhan pengguna.',
-                'perancangan_interface': 'Perancangan antarmuka menggunakan prinsip usability dan user experience yang baik untuk memudahkan pengguna dalam mengoperasikan sistem.'
+                'analisis_kebutuhan': get_text_between(['BAB IV', 'HASIL', 'ANALISIS'], ['PENUTUP', 'BAB V']) or 'Analisis kebutuhan menunjukkan bahwa solusi yang dikembangkan harus mempertimbangkan berbagai aspek penting yang berkaitan dengan kebutuhan pengguna dan konteks penerapan.',
+                'perancangan_sistem': 'Perancangan sistem mencakup berbagai aspek penting seperti arsitektur, komponen, dan mekanisme kerja yang sesuai dengan kebutuhan dan spesifikasi yang telah ditentukan.',
+                'perancangan_interface': 'Perancangan interface menggunakan prinsip-prinsip yang mendukung kemudahan penggunaan dan pengalaman yang optimal bagi pengguna sistem.'
             },
             'chapter5': {
-                'implementasi': 'Implementasi sistem dilakukan sesuai dengan desain yang telah dibuat menggunakan teknologi web modern dan best practices dalam pengembangan software.',
-                'hasil_pengujian': 'Hasil pengujian menunjukkan bahwa sistem berfungsi dengan baik dan memenuhi spesifikasi yang telah ditentukan.',
-                'pembahasan': 'Pembahasan hasil menunjukkan bahwa sistem yang dikembangkan dapat memberikan manfaat yang signifikan dalam meningkatkan efisiensi dan efektivitas.',
-                'evaluasi': 'Evaluasi sistem menunjukkan bahwa implementasi berhasil dan sistem siap untuk digunakan dalam lingkungan yang sesungguhnya.'
+                'implementasi': get_text_between(['BAB V', 'IMPLEMENTASI'], ['PENUTUP', 'BAB VI']) or 'Implementasi dilakukan sesuai dengan desain yang telah dibuat dengan memperhatikan berbagai aspek teknis dan kualitas yang diperlukan.',
+                'hasil_pengujian': 'Hasil pengujian menunjukkan bahwa implementasi berhasil memenuhi spesifikasi dan memberikan hasil yang sesuai dengan harapan.',
+                'pembahasan': 'Pembahasan hasil menunjukkan bahwa pendekatan yang digunakan memberikan kontribusi yang signifikan dalam mengatasi permasalahan yang diteliti.',
+                'evaluasi': 'Evaluasi menunjukkan bahwa solusi yang dikembangkan memiliki potensi untuk diterapkan dalam konteks yang lebih luas and memberikan manfaat yang bermakna.'
             },
             'chapter6': {
-                'kesimpulan': 'Kesimpulan dari penelitian ini adalah bahwa sistem informasi berbasis web yang dikembangkan dapat memberikan manfaat yang signifikan dan siap untuk diimplementasikan.',
-                'saran': 'Saran untuk pengembangan selanjutnya adalah menambahkan fitur-fitur tambahan dan melakukan pengujian lebih lanjut untuk memastikan kualitas sistem.'
+                'kesimpulan': get_text_between(['BAB VI', 'PENUTUP', 'KESIMPULAN'], ['DAFTAR PUSTAKA']) or 'Kesimpulan dari penelitian ini adalah bahwa pendekatan yang digunakan berhasil memberikan solusi yang efektif dan efisien untuk mengatasi permasalahan yang diteliti.',
+                'saran': 'Saran untuk pengembangan selanjutnya adalah melakukan perluasan ruang lingkup, peningkatan metodologi, and eksplorasi aplikasi dalam konteks yang berbeda.'
             },
             'references': [
-                'Laudon, K. C., & Laudon, J. P. (2018). Management information systems: Managing the digital firm. Pearson.',
-                'Pressman, R. S. (2014). Software engineering: A practitioner\'s approach. McGraw-Hill.',
-                'Shelly, G. B., & Rosenblatt, H. J. (2011). Systems analysis and design. Cengage Learning.'
+                'Author, A. (Year). Title of the work. Publisher.',
+                'Author, B., & Author, C. (Year). Title of the article. Journal Name, Volume(Issue), pages.'
             ]
         }
 
