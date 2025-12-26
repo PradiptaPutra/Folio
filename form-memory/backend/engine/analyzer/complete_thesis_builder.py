@@ -492,14 +492,16 @@ class CompleteThesisBuilder:
         for i, para in enumerate(doc.paragraphs):
             text = para.text.strip()
             text_upper = text.upper()
-            
-            # 1. Detect Chapters
+            if not text: continue
+
+            # Reset per-paragraph flags
             is_ch = False
             ch_num = 0
-            
-            # Pattern: BAB I, BAB 1, CHAPTER 1 (handle Shift+Enter \v or \n)
-            text_norm = text_upper.replace('\v', ' ').replace('\n', ' ')
-            ch_match = re.match(r'^(BAB|CHAPTER)\s+([IVX\d]+)', text_norm)
+
+            # 1. Detect Chapters
+            # Pattern: BAB I, BAB 1, CHAPTER 1 (handle Shift+Enter \v or \n and leading whitespace)
+            text_norm = text_upper.replace('\v', ' ').replace('\n', ' ').strip()
+            ch_match = re.search(r'^(BAB|CHAPTER)\s+([IVX\d]+)', text_norm)
             if ch_match:
                 num_str = ch_match.group(2)
                 try:
@@ -510,14 +512,16 @@ class CompleteThesisBuilder:
             
             # Alternative: Style-based for auto-numbered headers
             elif (para.style and 'Heading 1' in str(para.style.name)) or (text_upper.startswith('BAB') and len(text) < 100):
-                if any(kw in text_upper for kw in ['PENDAHULUAN', 'LATAR BELAKANG']): ch_num = 1
-                elif any(kw in text_upper for kw in ['PUSTAKA', 'TEORI']): ch_num = 2
-                elif any(kw in text_upper for kw in ['METODOLOGI', 'METODE']): ch_num = 3
-                elif any(kw in text_upper for kw in ['ANALISIS', 'PERANCANGAN']): ch_num = 4
-                elif any(kw in text_upper for kw in ['IMPLEMENTASI', 'HASIL', 'PEMBAHASAN']): ch_num = 5
-                elif any(kw in text_upper for kw in ['PENUTUP', 'KESIMPULAN']): ch_num = 6
+                check_num = 0
+                if any(kw in text_upper for kw in ['PENDAHULUAN', 'LATAR BELAKANG']): check_num = 1
+                elif any(kw in text_upper for kw in ['PUSTAKA', 'TEORI']): check_num = 2
+                elif any(kw in text_upper for kw in ['METODOLOGI', 'METODE']): check_num = 3
+                elif any(kw in text_upper for kw in ['ANALISIS', 'PERANCANGAN']): check_num = 4
+                elif any(kw in text_upper for kw in ['IMPLEMENTASI', 'HASIL', 'PEMBAHASAN']): check_num = 5
+                elif any(kw in text_upper for kw in ['PENUTUP', 'KESIMPULAN']): check_num = 6
                 
-                if ch_num > 0 and ch_num not in landmark_chapters:
+                if check_num > 0:
+                    ch_num = check_num
                     is_ch = True
 
             if is_ch:
@@ -527,15 +531,16 @@ class CompleteThesisBuilder:
                 continue
 
             # 2. Detect Subsections (Subbab)
-            # UII template often uses "Subbab" or "Anak Subbab" as placeholders
-            text_clean = text.replace('[', '').replace(']', '').strip()
-            if text_clean == 'Subbab' or text_clean == 'Anak Subbab' or (text_clean.startswith('Subbab') and len(text_clean) < 20):
+            # UII template often uses "Subbab" or "Anak Subbab" as placeholders, often numbered like "1.1 Subbab"
+            # Use regex to catch variants like "1.1 Subbab", "Subbab [BAB I]", etc.
+            if re.search(r'\b(Subbab|Anak Subbab)\b', text, re.I) and len(text) < 60:
                 landmark_subsections.append({
                     'para': para,
                     'chapter': current_chapter,
-                    'is_anak': 'Anak' in text_clean
+                    'is_anak': 'Anak' in text or 'ANAK' in text.upper(),
+                    'original_text': text
                 })
-                print(f"[DEBUG] Landmark found: Subsection anchor at paragraph {i} (Chapter {current_chapter})")
+                print(f"[DEBUG] Landmark found: Subsection anchor at paragraph {i} (Chapter {current_chapter}): {text}")
 
         print(f"[INFO] Structure Analysis Complete: Found {len(landmark_chapters)} chapters and {len(landmark_subsections)} subsection anchors")
 
@@ -565,10 +570,11 @@ class CompleteThesisBuilder:
         current_chapter = 0
         for i, para in enumerate(doc.paragraphs):
             text = para.text.strip()
-            text_upper = para.text.upper().replace('\v', ' ').replace('\n', ' ')
+            text_upper = text.upper().replace('\v', ' ').replace('\n', ' ')
+            ch_num = 0
             
-            # Detect Chapters
-            ch_match = re.match(r'^(BAB|CHAPTER)\s+([IVX\d]+)', text_upper)
+            # Detect Chapters (Re-scan after cleaning)
+            ch_match = re.search(r'^(BAB|CHAPTER)\s+([IVX\d]+)', text_upper)
             if ch_match:
                 num_str = ch_match.group(2)
                 try:
@@ -577,23 +583,24 @@ class CompleteThesisBuilder:
                     current_chapter = ch_num
                 except: pass
             elif (para.style and 'Heading 1' in str(para.style.name)) or (text_upper.startswith('BAB') and len(text) < 100):
-                 if any(kw in text_upper for kw in ['PENDAHULUAN', 'LATAR BELAKANG']): ch_num = 1
-                 elif any(kw in text_upper for kw in ['PUSTAKA', 'TEORI']): ch_num = 2
-                 elif any(kw in text_upper for kw in ['METODOLOGI', 'METODE']): ch_num = 3
-                 elif any(kw in text_upper for kw in ['ANALISIS', 'PERANCANGAN']): ch_num = 4
-                 elif any(kw in text_upper for kw in ['IMPLEMENTASI', 'HASIL', 'PEMBAHASAN']): ch_num = 5
-                 elif any(kw in text_upper for kw in ['PENUTUP', 'KESIMPULAN']): ch_num = 6
-                 if ch_num > 0:
-                     landmark_chapters[ch_num] = para
-                     current_chapter = ch_num
+                 check_num = 0
+                 if any(kw in text_upper for kw in ['PENDAHULUAN', 'LATAR BELAKANG']): check_num = 1
+                 elif any(kw in text_upper for kw in ['PUSTAKA', 'TEORI']): check_num = 2
+                 elif any(kw in text_upper for kw in ['METODOLOGI', 'METODE']): check_num = 3
+                 elif any(kw in text_upper for kw in ['ANALISIS', 'PERANCANGAN']): check_num = 4
+                 elif any(kw in text_upper for kw in ['IMPLEMENTASI', 'HASIL', 'PEMBAHASAN']): check_num = 5
+                 elif any(kw in text_upper for kw in ['PENUTUP', 'KESIMPULAN']): check_num = 6
+                 if check_num > 0:
+                     landmark_chapters[check_num] = para
+                     current_chapter = check_num
 
-            # Detect Subsections
-            text_clean = text.replace('[', '').replace(']', '').strip()
-            if text_clean == 'Subbab' or text_clean == 'Anak Subbab' or (text_clean.startswith('Subbab') and len(text_clean) < 20):
+            # Detect Subsections (Regex based)
+            if re.search(r'\b(Subbab|Anak Subbab)\b', text, re.I) and len(text) < 60:
                 landmark_subsections.append({
                     'para': para,
                     'chapter': current_chapter,
-                    'is_anak': 'Anak' in text_clean
+                    'is_anak': 'Anak' in text or 'ANAK' in text.upper(),
+                    'original_text': text
                 })
 
         # Map AI content keys to logical order per chapter
@@ -623,8 +630,9 @@ class CompleteThesisBuilder:
                 continue
             
             # Find subsections for THIS chapter
-            current_sub_anchors = [s for s in landmark_subsections if s['chapter'] == chapter_num and not s['is_anak']]
-            print(f"[DEBUG] Chapter {chapter_num} has {len(current_sub_anchors)} sub-anchors")
+            # Include 'is_anak' in the mapping so child subsections don't stay empty
+            current_sub_anchors = [s for s in landmark_subsections if s['chapter'] == chapter_num]
+            print(f"[DEBUG] Chapter {chapter_num} has {len(current_sub_anchors)} sub-anchors (including Anak Subbab)")
             
             # Find the chapter heading to update its text (remove "TULISKAN JUDUL...")
             last_inserted_para = None
@@ -665,25 +673,41 @@ class CompleteThesisBuilder:
                     
                     # 1. Update Anchor Text
                     title_text = subsection_titles.get(key, key.replace('_', ' ').title())
-                    prefix = f"{chapter_num}.{i+1} " # Force clean numbering
-                    anchor_para.text = f"{prefix}{title_text}"
-                    anchor_para.bold = True
+                    
+                    # Prevent double numbering if paragraph already has a number
+                    if re.match(r'^\d+(\.\d+)*\s+', anchor_para.text):
+                        # Extract existing number if possible
+                        existing_match = re.match(r'^(\d+(\.\d+)*)\s+', anchor_para.text)
+                        if existing_match:
+                            prefix = existing_match.group(1) + " "
+                            anchor_para.text = f"{prefix}{title_text}"
+                        else:
+                            anchor_para.text = title_text
+                    else:
+                        # Fallback to calculated numbering
+                        level = 3 if anchor['is_anak'] else 2
+                        prefix = f"{chapter_num}.{i+1}"
+                        if level == 3: prefix = f"{chapter_num}.1.{i+1}" # Simplified assumption for child levels
+                        anchor_para.text = f"{prefix} {title_text}"
+                    
+                    # Ensure bold formatting
+                    for run in anchor_para.runs:
+                        run.bold = True
                     
                     # 2. Find target paragraph (the one after the anchor)
                     try:
                         idx = doc.paragraphs.index(anchor_para)
                         next_para = doc.paragraphs[idx+1] if idx+1 < len(doc.paragraphs) else None
                         
-                        # If next para is another anchor or BAB heading, we MUST insert a new one
-                        if next_para and (next_para.text.strip() == "" or len(next_para.text) < 100) and \
-                           not ('Subbab' in next_para.text or 'BAB' in next_para.text.upper()):
+                        # If next para is another anchor, BAB heading, or empty/short, WE USE IT as target
+                        # but check if it's already a real paragraph
+                        if next_para and len(next_para.text) < 150 and \
+                           not (re.search(r'\b(Subbab|Anak Subbab|BAB)\b', next_para.text, re.I)):
                             target_para = next_para
                         else:
-                            target_para = self._insert_paragraph_after(anchor_para, content)
-                            last_inserted_para = target_para
+                            # Insert a clean paragraph for the content
+                            target_para = self._insert_paragraph_after(anchor_para, "")
                             total_insertions += 1
-                            print(f"[SUCCESS] Created new paragraph for {key} in Chapter {chapter_num}")
-                            continue
                     except:
                         pass
                 
@@ -697,17 +721,59 @@ class CompleteThesisBuilder:
 
                 if target_para:
                     target_para.clear()
-                    target_para.add_run(content)
+                    
+                    # Clean the content - remove duplicated header if AI included it
+                    clean_content = content
+                    try:
+                        title_to_check = title_text.upper()
+                        first_line = content.split('\n')[0].upper()
+                        if title_to_check in first_line or re.sub(r'^\d+\.\d+\s+', '', title_to_check) in first_line:
+                            clean_content = '\n'.join(content.split('\n')[1:]).strip()
+                    except:
+                        pass
+
+                    # IMPORTANT: If we used Case A or B with _insert_paragraph_after, 
+                    # THE CONTENT IS ALREADY THERE. We only add_run if target_para is empty.
+                    if not target_para.text:
+                        target_para.add_run(clean_content)
+                    
                     self._apply_paragraph_formatting(target_para)
                     last_inserted_para = target_para
                     total_insertions += 1
                     print(f"[SUCCESS] Filled {key} in Chapter {chapter_num}")
 
+        # PHASE 5: Cleanup remaining landmarks and anchors
+        print("\n[INFO] Phase 5: Finalizing document structure...")
+        anchors_to_clear = ['SUBBAB', 'ANAK SUBBAB', 'CUCU SUBBAB', '[SUBBAB]', '[ANAK SUBBAB]', '[CUCU SUBBAB]']
+        paras_to_delete = []
+        for p in doc.paragraphs:
+            p_text = p.text.strip().upper()
+            
+            # Check for exact anchor keywords or common numbered variants (e.g., 1.1.1 Anak Subbab)
+            is_anchor = p_text in anchors_to_clear or \
+                        (len(p_text) < 50 and any(a in p_text for a in ['SUBBAB', 'ANAK SUBBAB', 'CUCU SUBBAB'])) or \
+                        any(a in p_text for a in ['[TITLE]', '[AUTHOR]', '[NIM]'])
+            
+            if is_anchor:
+                paras_to_delete.append(p)
+            elif '94523999' in p_text: # Clear any missed dummy data
+                p.text = p.text.replace('94523999', user_data.get('nim', ''))
+            elif any(dummy in p_text for dummy in ['TULISKAN ISI BAB', 'KETIK ISI BAB']):
+                paras_to_delete.append(p)
+
+        for p in reversed(paras_to_delete):
+            try:
+                p_element = p._element
+                if p_element is not None and p_element.getparent() is not None:
+                    p_element.getparent().remove(p_element)
+            except:
+                try: p.text = ""
+                except: pass
+
         print(f"\n[FINAL] Total content insertions: {total_insertions}")
 
         if total_insertions == 0:
             print("[ERROR] NO CONTENT WAS INSERTED!")
-            print("[ERROR] Check that analyzed_data has content and template has content paragraphs")
             return self.output_path
 
         # APPLY CRITICAL FORMATTING FIXES
@@ -1075,29 +1141,14 @@ class CompleteThesisBuilder:
             # NIM/Student ID DETECTION AND REPLACEMENT
             if user_metadata.get('nim'):
                 # Pattern 1: 8-10 digit numbers (common NIM length)
-                nim_pattern = re.compile(r'\b\d{8,10}\b')
+                # Use word boundaries and ensure it's not part of a larger string
+                nim_pattern = re.compile(r'\b(94523999|\d{8,10})\b')
                 if nim_pattern.search(text):
-                    # Replace the number, keep surrounding text
                     new_text = nim_pattern.sub(user_metadata['nim'], text)
                     if new_text != text:
                         para.text = new_text
                         replacements += 1
-                        print(f"[METADATA] Replaced NIM (digit pattern): '{original_text}' -> '{new_text}'")
                         continue
-
-                # Pattern 2: NIM-related keywords
-                nim_keywords = ['nim', 'nomor induk', 'student id', 'no. mahasiswa', 'nrp', 'npm']
-                if any(keyword.lower() in text.lower() for keyword in nim_keywords):
-                    # Look for numbers in this paragraph or nearby
-                    for check_i in range(max(0, i-1), min(len(doc.paragraphs), i+2)):
-                        check_text = doc.paragraphs[check_i].text
-                        if nim_pattern.search(check_text):
-                            new_text = nim_pattern.sub(user_metadata['nim'], check_text)
-                            doc.paragraphs[check_i].text = new_text
-                            replacements += 1
-                            print(f"[METADATA] Replaced NIM (keyword pattern): '{check_text}' -> '{new_text}'")
-                            break
-                    continue
 
             # UNIVERSITY/INSTITUTION DETECTION AND REPLACEMENT
             if complete_metadata.get('university') and complete_metadata['university'] != template_metadata.get('university'):
@@ -1135,30 +1186,36 @@ class CompleteThesisBuilder:
                     replacements += 1
                     continue
 
-            # SUPERVISOR/EXAMINER NAME DETECTION (More Robust)
-            supervisor_val = complete_metadata.get('supervisor1')
-            if supervisor_val and any(k in text.upper() for k in ['PEMBIMBING', 'SUPERVISOR', 'DOSEN']):
-                sig_pattern = re.compile(r'(\(\s*[^)]+\s*\)|:\s*[^,\n]+)')
+            # SUPERVISOR NAME DETECTION AND REPLACEMENT
+            supervisor_val = None
+            if any(k in text.lower() for k in ['pembimbing', 'supervisor']):
+                if '2' in text or 'II' in text:
+                    supervisor_val = complete_metadata.get('supervisor2')
+                else:
+                    supervisor_val = complete_metadata.get('supervisor1')
+            
+            if supervisor_val:
+                # Regex must look for actual placeholder indicators within brackets or colons
+                sig_pattern = re.compile(r'(\(\s*(?:Nama|NAMA|Dr\.|DR\.)[^)]*\)|:\s*(?:Nama|NAMA|Dr\.|DR\.)[^\n,]+)', re.I)
                 match = sig_pattern.search(text)
-                if match and any(p in text.upper() for p in ['( NAMA', ': NAMA', 'DR.', 'PEMBIMBING']):
-                    if '(' in match.group(1):
-                        para.text = text.replace(match.group(1), f"( {supervisor_val} )")
-                    else:
-                        para.text = text.replace(match.group(1), f": {supervisor_val}")
+                if match:
+                    para.text = text.replace(match.group(1), f"( {supervisor_val} )" if '(' in match.group(1) else f": {supervisor_val}")
                     replacements += 1
                     continue
 
-
             # EXAMINER NAME DETECTION AND REPLACEMENT
-            examiner_val = complete_metadata.get('examiner1')
-            if examiner_val and any(k in text.upper() for k in ['PENGUJI', 'ANGGOTA', 'EXAMINER']):
-                 sig_pattern = re.compile(r'(\(\s*[^)]+\s*\)|:\s*[^,\n]+)')
+            examiner_val = None
+            if any(k in text.lower() for k in ['penguji', 'anggota', 'examiner']):
+                if '2' in text or 'II' in text or '3' in text or 'III' in text:
+                    examiner_val = complete_metadata.get('examiner2')
+                else:
+                    examiner_val = complete_metadata.get('examiner1')
+
+            if examiner_val:
+                 sig_pattern = re.compile(r'(\(\s*(?:Nama|NAMA|Dr\.|DR\.|Anggota|Penguji)[^)]*\)|:\s*(?:Nama|NAMA|Dr\.|DR\.|Anggota|Penguji)[^\n,]+)', re.I)
                  match = sig_pattern.search(text)
-                 if match and any(p in text.upper() for p in ['( NAMA', ': NAMA', 'DR.', 'ANGGOTA', 'PENGUJI']):
-                    if '(' in match.group(1):
-                        para.text = text.replace(match.group(1), f"( {examiner_val} )")
-                    else:
-                        para.text = text.replace(match.group(1), f": {examiner_val}")
+                 if match:
+                    para.text = text.replace(match.group(1), f"( {examiner_val} )" if '(' in match.group(1) else f": {examiner_val}")
                     replacements += 1
                     continue
 
@@ -1175,31 +1232,18 @@ class CompleteThesisBuilder:
                         print(f"[METADATA] Replaced city: '{original_text}' -> '{new_text}'")
                         continue
 
-            # YEAR DETECTION AND REPLACEMENT
+            # YEAR DETECTION AND REPLACEMENT (Conservative)
             if complete_metadata.get('year'):
-                year_pattern = re.compile(r'\b(20\d{2})\b')
-                if year_pattern.search(text):
-                    current_year = year_pattern.search(text).group(1)
-                    if current_year != complete_metadata['year']:
+                # ONLY replace if it's a metadata-like line (Short) or contains markers
+                # Avoid citations like "Zukhri (2014)" or long paragraphs with years
+                if len(text) < 100 and not any(k in text for k in ['Zukhri', 'Sumber:', 'References']):
+                    year_pattern = re.compile(r'\b(20\d{2})\b')
+                    if year_pattern.search(text):
                         new_text = year_pattern.sub(complete_metadata['year'], text)
-                        para.text = new_text
-                        replacements += 1
-                        print(f"[METADATA] Replaced year: '{original_text}' -> '{new_text}'")
-                        continue
-
-            # YEAR DETECTION AND REPLACEMENT
-            if user_metadata.get('year'):
-                # Look for 4-digit years (current year ± 5 years)
-                current_year = 2024
-                year_pattern = re.compile(r'\b(2019|2020|2021|2022|2023|2024|2025|2026|2027|2028|2029)\b')
-
-                if year_pattern.search(text):
-                    new_text = year_pattern.sub(user_metadata['year'], text)
-                    if new_text != text:
-                        para.text = new_text
-                        replacements += 1
-                        print(f"[METADATA] Replaced year: '{original_text}' -> '{new_text}'")
-                        continue
+                        if new_text != text:
+                            para.text = new_text
+                            replacements += 1
+                            continue
 
         # Process TABLES for metadata replacement (CRITICAL FIX)
         for table in doc.tables:
@@ -1245,16 +1289,46 @@ class CompleteThesisBuilder:
         author = config.get('author_placeholder', ['Nama Mahasiswa'])[0]
         nim = config.get('nim_placeholder', ['94523999'])[0]
 
+        # Landmarks to protect (exact text only)
+        anchor_keywords = ['SUBBAB', 'ANAK SUBBAB', '[SUBBAB]', '[ANAK SUBBAB]']
+        
+        # Track if we are in the Table of Contents section
+        in_toc_section = False
+
         for para in doc.paragraphs:
             text = para.text
             text_strip = text.strip()
             text_upper = text_strip.upper()
+            
+            # Detect TOC section
+            if any(kw in text_upper for kw in ['DAFTAR ISI', 'DAFTAR TABEL', 'DAFTAR GAMBAR']):
+                in_toc_section = True
+            elif text_upper.startswith(('BAB I', 'CHAPTER 1')):
+                in_toc_section = False
 
             # PROTECT: Do not delete structural elements or headings
-            if (text_upper.startswith(('BAB ', 'CHAPTER ', 'ANNEX ', 'DAFTAR ', 'KATA PENGANTAR', 'SARI', 'ABSTRAK')) or 
-                'SUBBAB' in text_upper or 'ANAK SUBBAB' in text_upper or
-                (para.style and 'Heading' in str(para.style.name))):
+            # But allow cleaning if they are clearly dummy TOC entries or instructions
+            is_landmark = text_upper in anchor_keywords or (text_upper.startswith('BAB') and len(text_strip) <  50)
+            
+            if is_landmark:
+                # Still protect actual landmarks
                 continue
+            
+            if (not in_toc_section) and (para.style and 'Heading' in str(para.style.name)):
+                # Protect real headings in the body
+                continue
+            
+            # Additional dummy entries check (especially for TOC)
+            is_dummy_toc = in_toc_section and (
+                re.search(r'^\d\.\d\s+.*Subbab', text_strip, re.I) or
+                re.search(r'^\d\.\d\.\d\s+.*Anak Subbab', text_strip, re.I) or
+                any(kw in text_upper for kw in [
+                    'LATAR BELAKANG', 'RUMUSAN MASALAH', 'TUJUAN PENELITIAN', 'MANFAAT PENELITIAN', 
+                    'KAJIAN PUSTAKA', 'LANDASAN TEORI', 'DESAIN PENELITIAN', 'PENGUMPULAN DATA',
+                    'METODE PENELITIAN', 'METODOLOGI', 'ANALISIS DATA', 'HASIL PENELITIAN',
+                    'IMPLEMENTASI SISTEM', 'PENGUJIAN', 'PEMBAHASAN HASIL', 'KESIMPULAN', 'SARAN'
+                ])
+            )
 
             # Remove instructional text from title/approval pages (language-specific)
             if config.get('language') == 'id':
@@ -1267,8 +1341,11 @@ class CompleteThesisBuilder:
                     # Indonesian academic template instructions
                     "Format paragraf dengan style",
                     "Format paragraf dengan",
-                    # "Subbab",  # REMOVED - needed for content insertion
-                    # "Anak Subbab",  # REMOVED - needed for content insertion
+                    "Baris pertama berjarak 1 cm",
+                    "Subbab dengan penomoran menggunakan 2 angka",
+                    "Anak Subbab dengan penomoran menggunakan 3 angka",
+                    "penomoran cukup dengan menggunakan huruf abjad",
+                    "Cucu Subbab tidak perlu penomoran",
                     "Cucu Subbab",
                     "Tuliskan isi bab",
                     "Isi bab di sini",
@@ -1280,6 +1357,13 @@ class CompleteThesisBuilder:
                     "METODOLOGI PENELITIAN",
                     "HASIL DAN PEMBAHASAN",
                     "KESIMPULAN DAN SARAN",
+                    # Formula and Code instructions
+                    "Akurasi=(Solusi Maksimum",
+                    "Solusi Maksimum-Solusi Minimum",
+                    "#include <iostream>",
+                    "using namespace std;",
+                    "int main()",
+                    "cout << \"Hello world!\"",
                     # Additional template formatting instructions
                     "Penyebutan dengan nomor",
                     "Penomoran level",
@@ -1317,13 +1401,6 @@ class CompleteThesisBuilder:
                     "Bagian ini bebas untuk diisikan",
                     "Idealnya halaman persembahan",
                     "Idealnya halaman moto",
-                    "SARI",
-                    "Kata kunci:",
-                    "DAFTAR ISI",
-                    "DAFTAR TABEL",
-                    "DAFTAR GAMBAR",
-                    "GLOSARIUM",
-                    "LAMPIRAN",
                     "pola piramida terbalik",
                 ]
             else:
@@ -1333,10 +1410,15 @@ class CompleteThesisBuilder:
                     "Replace with your student ID"
                 ]
 
+            if is_dummy_toc:
+                paragraphs_to_remove.append(para)
+                replacements += 1
+                continue
+
             for phrase in instructional_phrases:
                 if phrase.lower() in text.lower():
                     # CRITICAL: If it's a short instructional paragraph, remove it
-                    if len(text) < 300: # Slightly larger window for instructions
+                    if len(text) < 500: # Slightly larger window for instructions
                         # Store for deletion later to avoid iterator issues
                         paragraphs_to_remove.append(para)
                         replacements += 1
@@ -1357,9 +1439,32 @@ class CompleteThesisBuilder:
 
         # Process TABLES for instructional text removal
         for table in doc.tables:
+            # Check if this table is likely a TOC table (lots of numbers and subbab keywords)
+            table_text = ""
+            try:
+                table_text = " ".join(cell.text for row in table.rows for cell in row.cells).upper()
+            except: pass
+            
+            is_toc_table = any(kw in table_text for kw in ['SUBBAB', 'LATAR BELAKANG', 'DAFTAR ISI']) and len(table_text) < 5000
+
             for row in table.rows:
                 for cell in row.cells:
                     cell_text = cell.text.strip()
+                    cell_upper = cell_text.upper()
+                    if not cell_text: continue
+
+                    # PROTECT landmarks even in tables
+                    if cell_upper in anchor_keywords or (cell_upper.startswith('BAB') and len(cell_text) < 50):
+                        continue
+
+                    # Dummy TOC entry in table cell
+                    if is_toc_table and (
+                        re.search(r'^\d\.\d(\.\d)?\s+', cell_text) or
+                        any(kw in cell_upper for kw in ['SUBBAB', 'LATAR BELAKANG', 'RUMUSAN MASALAH', 'TUJUAN', 'MANFAAT'])
+                    ):
+                        cell.text = ''
+                        replacements += 1
+                        continue
 
                     # Remove instructional text from table cells
                     for phrase in instructional_phrases:
@@ -1445,11 +1550,9 @@ class CompleteThesisBuilder:
         # Replace chapter content placeholders with AI sections
         replacements_made += self._replace_chapter_placeholders(doc, ai_sections)
 
-        # Clean up any remaining generic placeholders
-        replacements_made += self._clean_generic_placeholders(doc)
-
-        print(f"[DEBUG] Made {replacements_made} intelligent template replacements")
-        return replacements_made
+        # Metadata replacement is handled by _clean_template_instructions
+        # which is much more robust and selective.
+        return 0
 
     def _replace_user_data_placeholders(self, doc, user_data):
         """Replace user data placeholders like title, author, etc."""
@@ -2860,7 +2963,8 @@ def create_complete_thesis(
     use_ai: bool = True,
     include_frontmatter: bool = True,
     api_key: Optional[str] = None,
-    university_config: str = 'indonesian_standard'
+    university_config: str = 'indonesian_standard',
+    use_simple_builder: bool = False
 ) -> Dict[str, Any]:
     """Convenience function to create a complete thesis in one call.
 
@@ -2873,8 +2977,7 @@ def create_complete_thesis(
         include_frontmatter: Whether to include front matter
         api_key: OpenRouter API key
         university_config: University template configuration
-        use_ai: Whether to use AI semantic analysis
-        include_frontmatter: Whether to include front matter sections
+        use_simple_builder: Use simple, reliable builder instead of complex template system
     
     Returns:
         Dictionary with:
@@ -2902,21 +3005,55 @@ def create_complete_thesis(
                 "error_details": f"File does not exist: {content_path}",
             }
         
-        builder = CompleteThesisBuilder(template_path, content_path, output_path, use_ai=use_ai, include_frontmatter=include_frontmatter, api_key=api_key, university_config=university_config)
+        # Try simple builder first if requested or on complex template failure
+        if use_simple_builder:
+            print("[CREATE_THESIS] Using simple builder for reliable output")
+            from .simple_thesis_builder import SimpleThesisBuilder
+            simple_builder = SimpleThesisBuilder(template_path, content_path, output_path)
+            output = simple_builder.build(user_data or {})
+            
+            return {
+                "status": "success",
+                "output_file": str(output),
+                "message": "Thesis document created successfully (simple builder)",
+                "report": {},
+                "file_size": output.stat().st_size if output.exists() else 0,
+            }
         
-        # Get analysis before building
-        report = builder.get_analysis_report()
-        
-        # Build the thesis
-        output = builder.build(user_data or {})
-        
-        return {
-            "status": "success",
-            "output_file": str(output),
-            "message": "Complete thesis document created successfully",
-            "report": report,
-            "file_size": output.stat().st_size if output.exists() else 0,
-        }
+        # Try complex builder with fallback to simple builder
+        try:
+            builder = CompleteThesisBuilder(template_path, content_path, output_path, use_ai=use_ai, include_frontmatter=include_frontmatter, api_key=api_key, university_config=university_config)
+            
+            # Get analysis before building
+            report = builder.get_analysis_report()
+            
+            # Build the thesis
+            output = builder.build(user_data or {})
+            
+            return {
+                "status": "success",
+                "output_file": str(output),
+                "message": "Complete thesis document created successfully",
+                "report": report,
+                "file_size": output.stat().st_size if output.exists() else 0,
+            }
+        except Exception as complex_e:
+            print(f"[CREATE_THESIS] Complex builder failed: {complex_e}")
+            print("[CREATE_THESIS] Falling back to simple builder...")
+            
+            # Fallback to simple builder
+            from .simple_thesis_builder import SimpleThesisBuilder
+            simple_builder = SimpleThesisBuilder(template_path, content_path, output_path)
+            output = simple_builder.build(user_data or {})
+            
+            return {
+                "status": "success",
+                "output_file": str(output),
+                "message": "Thesis document created with fallback method",
+                "report": {},
+                "file_size": output.stat().st_size if output.exists() else 0,
+            }
+    
     except Exception as e:
         import traceback
         return {

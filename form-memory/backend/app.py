@@ -372,7 +372,8 @@ async def generate_document(
     thesis_number: Optional[str] = Form(None),
     abstract_id: Optional[str] = Form(None),
     abstract_en: Optional[str] = Form(None),
-    keywords: Optional[str] = Form(None)
+    keywords: Optional[str] = Form(None),
+    simple_builder: str = Form("false", description="Use simple, reliable builder instead of complex template system")
 ):
     """
     Unified document generation endpoint - NOW CREATES COMPLETE THESIS with AI!
@@ -478,6 +479,7 @@ async def generate_document(
             content_path.write_text(raw_text, encoding="utf-8")
             
             # Build COMPLETE thesis document with AI enhancement
+            use_simple = simple_builder.lower() in ('true', '1', 'yes')
             result = create_complete_thesis(
                 str(ref_path),
                 str(content_path),
@@ -485,7 +487,8 @@ async def generate_document(
                 user_data,
                 use_ai=use_ai,
                 include_frontmatter=include_fm,
-                api_key=OPENROUTER_API_KEY
+                api_key=OPENROUTER_API_KEY,
+                use_simple_builder=use_simple
             )
             
             if not isinstance(result, dict):
