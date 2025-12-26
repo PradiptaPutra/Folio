@@ -483,6 +483,78 @@ class CompleteThesisBuilder:
             print(f"[ERROR] Failed to load template: {e}")
             return self.output_path
 
+        # Extract template styles and fonts for preservation
+        template_styles_info = {}
+        template_font_info = {}
+        
+        # Extract "Isi Paragraf" style formatting
+        isi_paragraf_style = None
+        for style in doc.styles:
+            if style.name.lower() == 'isi paragraf':
+                isi_paragraf_style = style
+                # Extract paragraph format
+                try:
+                    pf = style.paragraph_format
+                    template_styles_info['Isi Paragraf'] = {
+                        'line_spacing': pf.line_spacing,
+                        'first_line_indent': pf.first_line_indent,
+                        'left_indent': pf.left_indent,
+                        'alignment': pf.alignment,
+                        'space_before': pf.space_before,
+                        'space_after': pf.space_after
+                    }
+                except:
+                    pass
+                # Extract font
+                try:
+                    if hasattr(style, 'font') and style.font:
+                        template_font_info['Isi Paragraf'] = {
+                            'name': style.font.name,
+                            'size': style.font.size
+                        }
+                except:
+                    pass
+                break
+        
+        # Extract default font from template (check styles first, then paragraphs)
+        # Try to get font from "Normal" style or "Isi Paragraf" style
+        for style in doc.styles:
+            try:
+                if style.name == 'Normal' or style.name == 'Isi Paragraf':
+                    if hasattr(style, 'font') and style.font:
+                        font_name = style.font.name
+                        font_size = style.font.size
+                        if font_name:
+                            template_font_info['default'] = {
+                                'name': font_name,
+                                'size': font_size
+                            }
+                            break
+            except:
+                continue
+        
+        # If still not found, check paragraph runs
+        if 'default' not in template_font_info:
+            for para in doc.paragraphs[:100]:
+                for run in para.runs:
+                    if run.font.name:
+                        template_font_info['default'] = {
+                            'name': run.font.name,
+                            'size': run.font.size
+                        }
+                        break
+                if 'default' in template_font_info:
+                    break
+        
+        # Store for use in formatting methods (ensure they're always dicts)
+        self.template_styles_info = template_styles_info if template_styles_info else {}
+        self.template_font_info = template_font_info if template_font_info else {}
+        self.isi_paragraf_style = isi_paragraf_style
+        
+        default_font = template_font_info.get('default', {}).get('name', 'Not found') if template_font_info else 'Not found'
+        print(f"[INFO] Extracted template font: {default_font}")
+        print(f"[INFO] Isi Paragraf style found: {isi_paragraf_style is not None}")
+
         # PHASE 1: Structural Landmark Analysis (BEFORE cleaning)
         print("[INFO] Phase 1: Analyzing template structural landmarks...")
         landmark_chapters = {} # {num: paragraph_obj}
@@ -532,13 +604,32 @@ class CompleteThesisBuilder:
 
             # 2. Detect Subsections (Subbab)
             # UII template often uses "Subbab" or "Anak Subbab" as placeholders, often numbered like "1.1 Subbab"
-            # Use regex to catch variants like "1.1 Subbab", "Subbab [BAB I]", etc.
+            # Also detect numbered subsections like "1.1", "1.2", "1.1.1" that might not have "Subbab" text
+            # Use regex to catch variants like "1.1 Subbab", "Subbab [BAB I]", "1.1", "1.2", etc.
+            is_subsection = False
+            subsection_number = None
+            
+            # Check for explicit "Subbab" text
             if re.search(r'\b(Subbab|Anak Subbab)\b', text, re.I) and len(text) < 60:
+                is_subsection = True
+            # Check for numbered subsection pattern (e.g., "1.1", "1.2", "1.1.1") within current chapter
+            elif current_chapter > 0:
+                # Pattern: chapter_num.subsection_num (e.g., "1.1", "1.2") or chapter_num.subsection_num.subsub_num
+                subsection_pattern = rf'^{re.escape(str(current_chapter))}\.\d+(\.\d+)?\s*'
+                if re.match(subsection_pattern, text) and len(text) < 100:
+                    is_subsection = True
+                    # Extract the subsection number for better matching
+                    num_match = re.match(rf'^{re.escape(str(current_chapter))}\.(\d+)', text)
+                    if num_match:
+                        subsection_number = int(num_match.group(1))
+            
+            if is_subsection:
                 landmark_subsections.append({
                     'para': para,
                     'chapter': current_chapter,
-                    'is_anak': 'Anak' in text or 'ANAK' in text.upper(),
-                    'original_text': text
+                    'is_anak': 'Anak' in text or 'ANAK' in text.upper() or (subsection_number and subsection_number > 10),
+                    'original_text': text,
+                    'subsection_number': subsection_number
                 })
                 print(f"[DEBUG] Landmark found: Subsection anchor at paragraph {i} (Chapter {current_chapter}): {text}")
 
@@ -594,13 +685,31 @@ class CompleteThesisBuilder:
                      landmark_chapters[check_num] = para
                      current_chapter = check_num
 
-            # Detect Subsections (Regex based)
+            # Detect Subsections (Regex based) - Enhanced to catch numbered subsections
+            is_subsection = False
+            subsection_number = None
+            
+            # Check for explicit "Subbab" text
             if re.search(r'\b(Subbab|Anak Subbab)\b', text, re.I) and len(text) < 60:
+                is_subsection = True
+            # Check for numbered subsection pattern (e.g., "1.1", "1.2", "1.1.1") within current chapter
+            elif current_chapter > 0:
+                # Pattern: chapter_num.subsection_num (e.g., "1.1", "1.2") or chapter_num.subsection_num.subsub_num
+                subsection_pattern = rf'^{re.escape(str(current_chapter))}\.\d+(\.\d+)?\s*'
+                if re.match(subsection_pattern, text) and len(text) < 100:
+                    is_subsection = True
+                    # Extract the subsection number for better matching
+                    num_match = re.match(rf'^{re.escape(str(current_chapter))}\.(\d+)', text)
+                    if num_match:
+                        subsection_number = int(num_match.group(1))
+            
+            if is_subsection:
                 landmark_subsections.append({
                     'para': para,
                     'chapter': current_chapter,
-                    'is_anak': 'Anak' in text or 'ANAK' in text.upper(),
-                    'original_text': text
+                    'is_anak': 'Anak' in text or 'ANAK' in text.upper() or (subsection_number and subsection_number > 10),
+                    'original_text': text,
+                    'subsection_number': subsection_number
                 })
 
         # Map AI content keys to logical order per chapter
@@ -658,66 +767,122 @@ class CompleteThesisBuilder:
                     run2.bold = True
 
             # Insert subsections
-            for i, key in enumerate(chapter_key_order.get(chapter_num, [])):
+            subsection_counter = 1  # Track subsection numbering within chapter
+            expected_subsections = chapter_key_order.get(chapter_num, [])
+            
+            for i, key in enumerate(expected_subsections):
                 content = chapter_content.get(key)
-                if not content or len(content.strip()) < 50:
-                    print(f"[DEBUG] Skipping {key}: content too short or missing")
+                if not content or len(str(content).strip()) < 50:
+                    print(f"[DEBUG] Skipping {key}: content too short or missing ({len(str(content)) if content else 0} chars)")
                     continue
                 
                 target_para = None
+                title_text = subsection_titles.get(key, key.replace('_', ' ').title())
                 
                 # Case A: We have a "Subbab" anchor for this position
                 if i < len(current_sub_anchors):
                     anchor = current_sub_anchors[i]
                     anchor_para = anchor['para']
                     
-                    # 1. Update Anchor Text
-                    title_text = subsection_titles.get(key, key.replace('_', ' ').title())
+                    # 1. Update Anchor Text with proper numbering
+                    # Use subsection_counter for consistent numbering
+                    expected_number = f"{chapter_num}.{subsection_counter}"
                     
-                    # Prevent double numbering if paragraph already has a number
-                    if re.match(r'^\d+(\.\d+)*\s+', anchor_para.text):
-                        # Extract existing number if possible
-                        existing_match = re.match(r'^(\d+(\.\d+)*)\s+', anchor_para.text)
-                        if existing_match:
-                            prefix = existing_match.group(1) + " "
-                            anchor_para.text = f"{prefix}{title_text}"
+                    # Check if anchor already has a number that matches our expected pattern
+                    existing_num_match = re.match(r'^(\d+(\.\d+)*)\s+', anchor_para.text)
+                    if existing_num_match:
+                        existing_num = existing_num_match.group(1)
+                        # Use existing number if it matches our expected pattern
+                        if existing_num.startswith(f"{chapter_num}."):
+                            prefix = existing_num + " "
                         else:
-                            anchor_para.text = title_text
+                            prefix = expected_number + " "
                     else:
-                        # Fallback to calculated numbering
-                        level = 3 if anchor['is_anak'] else 2
-                        prefix = f"{chapter_num}.{i+1}"
-                        if level == 3: prefix = f"{chapter_num}.1.{i+1}" # Simplified assumption for child levels
-                        anchor_para.text = f"{prefix} {title_text}"
+                        # No existing number, use calculated one
+                        prefix = expected_number + " "
                     
-                    # Ensure bold formatting
-                    for run in anchor_para.runs:
-                        run.bold = True
+                    anchor_para.clear()
+                    anchor_run = anchor_para.add_run(prefix + title_text)
+                    anchor_run.bold = True
+                    
+                    # Set appropriate style (Heading 3 for subsections)
+                    try:
+                        anchor_para.style = 'Heading 3'
+                    except:
+                        pass
                     
                     # 2. Find target paragraph (the one after the anchor)
                     try:
                         idx = doc.paragraphs.index(anchor_para)
-                        next_para = doc.paragraphs[idx+1] if idx+1 < len(doc.paragraphs) else None
-                        
-                        # If next para is another anchor, BAB heading, or empty/short, WE USE IT as target
-                        # but check if it's already a real paragraph
-                        if next_para and len(next_para.text) < 150 and \
-                           not (re.search(r'\b(Subbab|Anak Subbab|BAB)\b', next_para.text, re.I)):
+                        # Look for content paragraph in next few paragraphs
+                        for j in range(idx + 1, min(idx + 5, len(doc.paragraphs))):
+                            next_para = doc.paragraphs[j]
+                            next_text = next_para.text.strip()
+                            
+                            # Skip if this is another heading/subsection/BAB
+                            if (re.search(r'\b(Subbab|Anak Subbab|BAB|CHAPTER)\b', next_text, re.I) or
+                                re.match(rf'^{re.escape(str(chapter_num))}\.\d+', next_text) or
+                                next_para.style and 'Heading' in str(next_para.style.name)):
+                                continue
+                            
+                            # Found a suitable content paragraph
                             target_para = next_para
-                        else:
-                            # Insert a clean paragraph for the content
+                            break
+                        
+                        # If no suitable paragraph found, insert a new one
+                        if not target_para:
                             target_para = self._insert_paragraph_after(anchor_para, "")
                             total_insertions += 1
-                    except:
-                        pass
+                    except Exception as e:
+                        print(f"[WARNING] Error finding target paragraph for {key}: {e}")
+                        # Fallback: insert new paragraph
+                        try:
+                            target_para = self._insert_paragraph_after(anchor_para, "")
+                            total_insertions += 1
+                        except:
+                            pass
                 
-                # Case B: No anchor found, or anchor logic failed - insert after last para
+                # Case B: No anchor found - create subsection heading and content
                 if not target_para:
-                    if last_inserted_para:
-                        target_para = self._insert_paragraph_after(last_inserted_para, content)
-                        print(f"[SUCCESS] Inserted {key} after previous paragraph in Chapter {chapter_num}")
+                    # Create new subsection heading
+                    subsection_number = f"{chapter_num}.{subsection_counter}"
+                    
+                    # Find insertion point (after chapter heading or last inserted content)
+                    insert_after = last_inserted_para
+                    if not insert_after and chapter_num in landmark_chapters:
+                        insert_after = landmark_chapters[chapter_num]
+                    
+                    # If still no insertion point, find the last paragraph in this chapter
+                    if not insert_after:
+                        # Find chapter heading and use the paragraph after it
+                        for para_idx, para in enumerate(doc.paragraphs):
+                            if f"BAB {self._to_roman(chapter_num)}" in para.text.upper():
+                                if para_idx + 1 < len(doc.paragraphs):
+                                    insert_after = doc.paragraphs[para_idx + 1]
+                                    break
+                    
+                    if insert_after:
+                        try:
+                            # Create subsection heading paragraph
+                            heading_para = self._insert_paragraph_after(insert_after, "")
+                            heading_run = heading_para.add_run(f"{subsection_number} {title_text}")
+                            heading_run.bold = True
+                            try:
+                                heading_para.style = 'Heading 3'
+                            except:
+                                pass
+                            
+                            # Create content paragraph after heading
+                            target_para = self._insert_paragraph_after(heading_para, "")
+                            last_inserted_para = heading_para
+                            total_insertions += 1
+                            print(f"[SUCCESS] Created subsection heading and content for {key} ({subsection_number}) in Chapter {chapter_num}")
+                        except Exception as e:
+                            print(f"[WARNING] Failed to create subsection for {key}: {e}")
+                            import traceback
+                            traceback.print_exc()
                     else:
-                        print(f"[WARNING] Nowhere to put {key} in Chapter {chapter_num}")
+                        print(f"[WARNING] Nowhere to put {key} in Chapter {chapter_num} - no insertion point")
 
                 if target_para:
                     target_para.clear()
@@ -726,26 +891,46 @@ class CompleteThesisBuilder:
                     clean_content = content
                     try:
                         title_to_check = title_text.upper()
-                        first_line = content.split('\n')[0].upper()
+                        first_line = content.split('\n')[0].upper() if content else ""
                         if title_to_check in first_line or re.sub(r'^\d+\.\d+\s+', '', title_to_check) in first_line:
                             clean_content = '\n'.join(content.split('\n')[1:]).strip()
                     except:
                         pass
+                    
+                    # Remove unwanted patterns but be less aggressive
+                    if clean_content:
+                        # Only remove obvious unwanted patterns
+                        unwanted = ['Disusun Oleh:', 'DISUSUN OLEH:']
+                        for pattern in unwanted:
+                            clean_content = clean_content.replace(pattern, '').strip()
+                        # Remove metadata at end of lines
+                        lines = clean_content.split('\n')
+                        cleaned_lines = []
+                        for line in lines:
+                            line_stripped = line.strip()
+                            # Only skip obvious metadata (NIM patterns, very short with colon)
+                            if (re.match(r'^\d{8,}$', line_stripped) or 
+                                (len(line_stripped) < 20 and ':' in line_stripped and not re.match(r'^\d+\.\d+', line_stripped))):
+                                continue
+                            cleaned_lines.append(line)
+                        clean_content = '\n'.join(cleaned_lines).strip()
 
-                    # IMPORTANT: If we used Case A or B with _insert_paragraph_after, 
-                    # THE CONTENT IS ALREADY THERE. We only add_run if target_para is empty.
-                    if not target_para.text:
+                    # Insert content
+                    if clean_content:
                         target_para.add_run(clean_content)
                     
-                    self._apply_paragraph_formatting(target_para)
+                    # Apply formatting with template preservation
+                    self._apply_paragraph_formatting(target_para, preserve_template=True)
                     last_inserted_para = target_para
                     total_insertions += 1
-                    print(f"[SUCCESS] Filled {key} in Chapter {chapter_num}")
+                    subsection_counter += 1
+                    print(f"[SUCCESS] Filled {key} ({subsection_number}) in Chapter {chapter_num}")
 
         # PHASE 5: Cleanup remaining landmarks and anchors
         print("\n[INFO] Phase 5: Finalizing document structure...")
         anchors_to_clear = ['SUBBAB', 'ANAK SUBBAB', 'CUCU SUBBAB', '[SUBBAB]', '[ANAK SUBBAB]', '[CUCU SUBBAB]']
         paras_to_delete = []
+        
         for p in doc.paragraphs:
             p_text = p.text.strip().upper()
             
@@ -760,6 +945,30 @@ class CompleteThesisBuilder:
                 p.text = p.text.replace('94523999', user_data.get('nim', ''))
             elif any(dummy in p_text for dummy in ['TULISKAN ISI BAB', 'KETIK ISI BAB']):
                 paras_to_delete.append(p)
+            
+            # Fix subsection numbering issues (missing chapter numbers) - but be careful
+            p_text_original = p.text.strip()
+            if re.match(r'^\.\d+', p_text_original):  # Starts with .1, .2, etc. (missing chapter number)
+                # Try to infer chapter number from context
+                para_idx = doc.paragraphs.index(p)
+                for i in range(max(0, para_idx - 10), para_idx):
+                    prev_text = doc.paragraphs[i].text.strip()
+                    # Check if previous paragraph is a BAB heading
+                    bab_match = re.search(r'BAB\s+([IVX\d]+)', prev_text, re.I)
+                    if bab_match:
+                        try:
+                            chapter_num = self._roman_to_int(bab_match.group(1)) if not bab_match.group(1).isdigit() else int(bab_match.group(1))
+                            # Fix the subsection number
+                            subsection_match = re.match(r'^\.(\d+)', p_text_original)
+                            if subsection_match:
+                                subsection_num = subsection_match.group(1)
+                                fixed_text = f"{chapter_num}.{subsection_num}" + p_text_original[subsection_match.end():]
+                                p.clear()
+                                p.add_run(fixed_text)
+                                print(f"[FIX] Fixed subsection numbering: '{p_text_original[:30]}' -> '{fixed_text[:30]}'")
+                                break
+                        except:
+                            pass
 
         for p in reversed(paras_to_delete):
             try:
@@ -776,11 +985,11 @@ class CompleteThesisBuilder:
             print("[ERROR] NO CONTENT WAS INSERTED!")
             return self.output_path
 
-        # APPLY CRITICAL FORMATTING FIXES
+        # APPLY CRITICAL FORMATTING FIXES (with template preservation)
         print("[INFO] Applying critical formatting fixes...")
         for para in doc.paragraphs:
             if para.text.strip():
-                self._apply_paragraph_formatting(para)
+                self._apply_paragraph_formatting(para, preserve_template=True)
 
         self._apply_list_formatting(doc)
         self._apply_heading_formatting(doc)
@@ -794,20 +1003,122 @@ class CompleteThesisBuilder:
 
         return self.output_path
 
-    def _apply_paragraph_formatting(self, para):
-        """Apply standard academic formatting to a paragraph."""
+    def _clean_subsection_content(self, content: str, title_text: str) -> str:
+        """Clean subsection content to remove unwanted text patterns."""
+        if not content:
+            return content
+        
+        clean_content = content
+        
+        # Remove duplicated header if AI included it
+        try:
+            title_to_check = title_text.upper()
+            first_line = content.split('\n')[0].upper() if content else ""
+            if title_to_check in first_line or re.sub(r'^\d+\.\d+\s+', '', title_to_check) in first_line:
+                clean_content = '\n'.join(content.split('\n')[1:]).strip()
+        except:
+            pass
+        
+        # Remove unwanted patterns
+        unwanted_patterns = [
+            r'Disusun Oleh:.*?\n',
+            r'DISUSUN OLEH:.*?\n',
+            r'Tujuan dari penelitian ini adalah:.*?\n',  # Remove if it's just a list starter
+        ]
+        
+        for pattern in unwanted_patterns:
+            clean_content = re.sub(pattern, '', clean_content, flags=re.IGNORECASE)
+        
+        # Remove metadata patterns at end of content
+        lines = clean_content.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line_stripped = line.strip()
+            # Skip lines that look like metadata
+            if (re.match(r'^\d{8,}', line_stripped) or  # NIM pattern
+                (len(line_stripped) < 30 and ':' in line_stripped and not re.match(r'^\d+\.\d+', line_stripped)) or
+                line_stripped in ['Informatika', '20523001', '94523999']):
+                continue
+            cleaned_lines.append(line)
+        
+        clean_content = '\n'.join(cleaned_lines).strip()
+        
+        # Remove extra whitespace
+        clean_content = re.sub(r'\n{3,}', '\n\n', clean_content)
+        clean_content = clean_content.strip()
+        
+        return clean_content
+
+    def _apply_paragraph_formatting(self, para, preserve_template: bool = False):
+        """Apply standard academic formatting to a paragraph, preserving template formatting when requested."""
+        from docx.shared import Inches, Pt
+        from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+        
         # CRITICAL: Do NOT format if it's likely a title, heading, or special section
         style_name = str(para.style.name).lower() if para.style else ""
-        if any(s in style_name for s in ['heading', 'title', 'subtitle', 'caption', 'toc', 'daftar']):
+        if any(s in style_name for s in ['heading', 'title', 'subtitle', 'caption', 'toc', 'daftar', 'judul', 'header']):
             return
 
         # Check if text looks like a heading (all caps, short)
         if para.text.isupper() and len(para.text) < 100:
             return
 
-        # 1. INDENTATION: 1cm first line
-        from docx.shared import Inches, Pt
-
+        # If preserve_template is True, use template formatting
+        if preserve_template and hasattr(self, 'template_styles_info') and hasattr(self, 'template_font_info'):
+            # Try to apply "Isi Paragraf" style for content paragraphs
+            try:
+                # Check if "Isi Paragraf" style exists in document
+                isi_style = None
+                for style in para.part.styles:
+                    if style.name.lower() == 'isi paragraf':
+                        isi_style = style
+                        break
+                
+                if isi_style:
+                    # Apply Isi Paragraf style
+                    para.style = 'Isi Paragraf'
+                    
+                    # Preserve template formatting from Isi Paragraf style
+                    if 'Isi Paragraf' in self.template_styles_info:
+                        fmt_info = self.template_styles_info['Isi Paragraf']
+                        pf = para.paragraph_format
+                        
+                        # Only apply if template has these settings (don't override None)
+                        if fmt_info.get('line_spacing') is not None:
+                            pf.line_spacing = fmt_info['line_spacing']
+                        if fmt_info.get('first_line_indent') is not None:
+                            pf.first_line_indent = fmt_info['first_line_indent']
+                        if fmt_info.get('left_indent') is not None:
+                            pf.left_indent = fmt_info['left_indent']
+                        if fmt_info.get('alignment') is not None:
+                            pf.alignment = fmt_info['alignment']
+                        if fmt_info.get('space_before') is not None:
+                            pf.space_before = fmt_info['space_before']
+                        if fmt_info.get('space_after') is not None:
+                            pf.space_after = fmt_info['space_after']
+                    
+                    # Apply template font
+                    if 'Isi Paragraf' in self.template_font_info:
+                        font_info = self.template_font_info['Isi Paragraf']
+                        for run in para.runs:
+                            if font_info.get('name'):
+                                run.font.name = font_info['name']
+                            if font_info.get('size'):
+                                run.font.size = font_info['size']
+                    elif 'default' in self.template_font_info:
+                        font_info = self.template_font_info['default']
+                        for run in para.runs:
+                            if font_info.get('name'):
+                                run.font.name = font_info['name']
+                            if font_info.get('size'):
+                                run.font.size = font_info['size']
+                    
+                    return  # Done with template preservation
+            except Exception as e:
+                print(f"[WARNING] Failed to apply template formatting: {e}")
+                # Fall through to default formatting
+        
+        # DEFAULT FORMATTING (when preserve_template is False or template info not available)
         # 1. PARAGRAPH INDENTATION: First line indent 1 cm
         try:
             para.paragraph_format.first_line_indent = Inches(1.0)  # 1 cm indent
@@ -816,7 +1127,6 @@ class CompleteThesisBuilder:
 
         # 2. ALIGNMENT: Justified (Ctrl + J equivalent)
         try:
-            from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
             para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
         except:
             pass
@@ -827,23 +1137,35 @@ class CompleteThesisBuilder:
         except:
             pass
 
-        # 4. FONT: Times New Roman, 11pt
+        # 4. FONT: Use template font if available, otherwise Times New Roman
+        template_font_name = None
+        if hasattr(self, 'template_font_info') and 'default' in self.template_font_info:
+            template_font_name = self.template_font_info['default'].get('name')
+        
+        font_name = template_font_name or 'Times New Roman'
+        
         for run in para.runs:
             try:
-                run.font.name = 'Times New Roman'
+                run.font.name = font_name
                 run.font.size = Pt(11)
             except:
                 pass
 
-        # 5. STYLE: Apply 'isi paragraf' if available
+        # 5. STYLE: Apply 'Isi Paragraf' if available (try both case variations)
         try:
             if hasattr(para, 'style') and para.style:
-                # Keep existing style if it's already 'isi paragraf'
-                if 'isi paragraf' in str(para.style).lower():
+                # Check if style is already Isi Paragraf
+                current_style_lower = str(para.style.name).lower()
+                if 'isi paragraf' in current_style_lower:
                     pass  # Keep it
                 else:
-                    # Try to set to isi paragraf style
-                    para.style = 'isi paragraf'
+                    # Try to set to Isi Paragraf style (try different case variations)
+                    for style_name in ['Isi Paragraf', 'isi paragraf', 'IsiParagraf']:
+                        try:
+                            para.style = style_name
+                            break
+                        except:
+                            continue
         except:
             pass
 
