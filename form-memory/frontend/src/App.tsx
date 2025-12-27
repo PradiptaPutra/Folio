@@ -1,13 +1,12 @@
 import { useState } from 'react'
 import { TemplateGenerator } from '@/components/TemplateGenerator'
 import { DocumentUploader } from '@/components/DocumentUploader'
-import { PerfectThesisGenerator } from '@/components/PerfectThesisGenerator'
 import { Button } from '@/components/ui/button'
 import { ArrowRight } from 'lucide-react'
 import { DocumentIllustration } from '@/components/DocumentIllustration'
 import { FeatureCard } from '@/components/FeatureCard'
 
-type Page = 'home' | 'generate' | 'perfect' | 'enforce'
+type Page = 'home' | 'generate' | 'enforce'
 
 function App() {
   const [currentPage, setCurrentPage] = useState<Page>('home')
@@ -31,11 +30,8 @@ function App() {
               <button onClick={() => setCurrentPage('home')} className="nav-link px-4 py-2 text-sm">
                 Home
               </button>
-              <button onClick={() => setCurrentPage('generate')} className="nav-link px-4 py-2 text-sm">
+              <button onClick={() => setCurrentPage('generate')} className="nav-link px-4 py-2 text-sm bg-primary text-primary-foreground">
                 Generate
-              </button>
-              <button onClick={() => setCurrentPage('perfect')} className="nav-link px-4 py-2 text-sm bg-primary text-primary-foreground">
-                Perfect AI
               </button>
             </div>
         </div>
@@ -156,14 +152,11 @@ function App() {
               </div>
 
               <div className="text-center space-y-6">
-                <Button onClick={() => setCurrentPage('perfect')} className="group bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 h-12 px-8 py-4 text-lg font-semibold">
-                  🚀 Perfect AI Formatting
+                <Button onClick={() => setCurrentPage('generate')} className="group bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 h-12 px-8 py-4 text-lg font-semibold">
+                  🚀 Start Formatting
                   <ArrowRight className="ml-2 w-5 h-5" />
                 </Button>
                 <div className="flex gap-3 justify-center">
-                  <Button variant="outline" onClick={() => setCurrentPage('generate')}>
-                    Standard Formatting
-                  </Button>
                   <Button variant="ghost">
                     See How It Works
                   </Button>
@@ -178,8 +171,8 @@ function App() {
                 <p className="text-primary-foreground/90">
                   Works with any university template. No setup required.
                 </p>
-                <Button variant="hero" onClick={() => setCurrentPage('perfect')} className="bg-background text-primary hover:bg-card">
-                  Start Perfect Formatting
+                <Button variant="hero" onClick={() => setCurrentPage('generate')} className="bg-background text-primary hover:bg-card">
+                  Start Formatting
                 </Button>
               </div>
             </section>
@@ -187,8 +180,6 @@ function App() {
         )}
 
         {currentPage === 'generate' && <TemplateGenerator />}
-
-        {currentPage === 'perfect' && <PerfectThesisGenerator />}
 
         {currentPage === 'enforce' && <DocumentUploader />}
       </main>

@@ -696,9 +696,44 @@ class CompleteThesisBuilder:
                         is_ch = True
 
                 if is_ch:
-                    landmark_chapters[ch_num] = para
-                    current_chapter = ch_num
-                    print(f"[DEBUG] Landmark found: Chapter {ch_num} at paragraph {i}")
+                    # CRITICAL: Check for TOC entry - multiple indicators
+                    style_name = para.style.name.lower() if para.style else ""
+                    is_toc_entry = (
+                        'toc' in style_name or  # TOC style
+                        '\t' in text or  # Tab character
+                        (re.search(r'\s+\d+\s*$', text) and len(text) < 100) or  # Page number at end
+                        (len(text) < 100 and 'BAB' in text and any(char.isdigit() or char in 'IVX' for char in text))  # Short BAB entry
+                    )
+                    
+                    is_in_front_matter = False
+                    
+                    if not is_toc_entry:
+                        # Check surrounding paragraphs for front matter keywords
+                        for j in range(max(0, i - 10), min(i + 10, len(doc.paragraphs))):
+                            check_text = doc.paragraphs[j].text.upper()
+                            check_style = doc.paragraphs[j].style.name.lower() if doc.paragraphs[j].style else ""
+                            if any(fm in check_text for fm in ['DAFTAR ISI', 'DAFTAR GAMBAR', 'DAFTAR TABEL', 'DAFTAR LAMPIRAN']):
+                                # Check if we're still in that section
+                                # Look ahead to see if we've left it
+                                found_exit = False
+                                for k in range(j + 1, min(j + 50, len(doc.paragraphs))):
+                                    exit_text = doc.paragraphs[k].text.strip().upper()
+                                    exit_style = doc.paragraphs[k].style.name.lower() if doc.paragraphs[k].style else ""
+                                    if ('BAB I' in exit_text or 'BAB 1' in exit_text) and 'toc' not in exit_style and '\t' not in doc.paragraphs[k].text:
+                                        if k <= i:  # We've passed it
+                                            found_exit = True
+                                            break
+                                if not found_exit:
+                                    is_in_front_matter = True
+                                    break
+                    
+                    if not is_toc_entry and not is_in_front_matter:
+                        landmark_chapters[ch_num] = para
+                        current_chapter = ch_num
+                        print(f"[DEBUG] Landmark found: Chapter {ch_num} at paragraph {i}")
+                    else:
+                        reason = "TOC entry" if is_toc_entry else "in front matter"
+                        print(f"[DEBUG] SKIPPED Chapter {ch_num} at paragraph {i} - {reason}")
                     continue
 
                 # 2. Detect Subsections - Enhanced patterns
@@ -1011,9 +1046,31 @@ class CompleteThesisBuilder:
                         # If still no insertion point, find the last paragraph in this chapter
                         if not insert_after:
                             # Find chapter heading and use the paragraph after it
+                            # Get main content start to avoid TOC
+                            main_content_start = self._find_main_content_start(doc) or 0
                             for para_idx, para in enumerate(doc.paragraphs):
-                                if f"BAB {self._to_roman(chapter_num)}" in para.text.upper():
-                                    if para_idx + 1 < len(doc.paragraphs):
+                                # Skip front matter
+                                if para_idx < main_content_start:
+                                    continue
+                                
+                                para_text = para.text.upper()
+                                
+                                # Skip TOC entries
+                                if '\t' in para.text or re.search(r'\s+\d+\s*$', para.text):
+                                    continue
+                                
+                                # Check for actual chapter heading
+                                if f"BAB {self._to_roman(chapter_num)}" in para_text:
+                                    # Verify it's not a TOC entry
+                                    is_toc = False
+                                    for j in range(max(0, para_idx - 2), min(para_idx + 3, len(doc.paragraphs))):
+                                        if j != para_idx:
+                                            check_para = doc.paragraphs[j]
+                                            if '\t' in check_para.text or re.search(r'\s+\d+\s*$', check_para.text):
+                                                is_toc = True
+                                                break
+                                    
+                                    if not is_toc and para_idx + 1 < len(doc.paragraphs):
                                         insert_after = doc.paragraphs[para_idx + 1]
                                         break
                         
@@ -1041,6 +1098,17 @@ class CompleteThesisBuilder:
                             print(f"[WARNING] Nowhere to put {key} in Chapter {chapter_num} - no insertion point")
 
                 if target_para:
+                    # Check if this subsection already has substantial content (prevent duplicates)
+                    existing_content = target_para.text.strip()
+                    if len(existing_content) > 100:
+                        # Already has content - check if it's placeholder or real content
+                        is_placeholder = any(ph in existing_content.upper() for ph in ['TULISKAN', 'KETIK', 'ISI', 'FORMAT PARAGRAF', 'SUBBAB'])
+                        if not is_placeholder:
+                            # Real content exists - skip to prevent duplication
+                            print(f"[SKIP] Subsection {subsection_number} ({key}) already has content ({len(existing_content)} chars), skipping duplicate")
+                            subsection_counter += 1
+                            continue
+                    
                     target_para.clear()
                     
                     # Clean the content - remove duplicated header if AI included it
@@ -2296,19 +2364,110 @@ class CompleteThesisBuilder:
                         insert_position = len(doc.paragraphs)
 
     def _find_main_content_start(self, doc):
-        """Find where main content should start in the template."""
-        # Look for the first chapter or main content area
+        """Find where main content should start in the template (after front matter).
+        CRITICAL: Must detect and skip all TOC entries including those with TOC styles."""
+        front_matter_keywords = ['DAFTAR ISI', 'DAFTAR GAMBAR', 'DAFTAR TABEL', 'DAFTAR LAMPIRAN', 
+                                 'TABLE OF CONTENTS', 'LIST OF FIGURES', 'LIST OF TABLES']
+        last_front_matter_index = -1
+        toc_section_end = None
+        
+        # Find the last front matter section and track TOC area
         for i, para in enumerate(doc.paragraphs):
             text = para.text.strip().upper()
-            if 'BAB I' in text or 'BAB 1' in text or 'CHAPTER 1' in text:
-                return i
-            # Look for table of contents end
-            if 'DAFTAR ISI' in text and i < len(doc.paragraphs) - 1:
-                # Skip a few paragraphs after TOC
-                return min(i + 5, len(doc.paragraphs))
-
+            style_name = para.style.name.lower() if para.style else ""
+            
+            # Check if we're entering a front matter section
+            if any(keyword in text for keyword in front_matter_keywords):
+                last_front_matter_index = i
+                if 'DAFTAR ISI' in text or 'TABLE OF CONTENTS' in text:
+                    # Find where TOC section ends
+                    for j in range(i + 1, min(i + 100, len(doc.paragraphs))):
+                        next_para = doc.paragraphs[j]
+                        next_text = next_para.text.strip().upper()
+                        next_style = next_para.style.name.lower() if next_para.style else ""
+                        # TOC ends when we hit another front matter section or main content
+                        if any(kw in next_text for kw in ['DAFTAR GAMBAR', 'DAFTAR TABEL', 'BAB I', 'BAB 1']):
+                            # But verify it's not still a TOC entry
+                            if 'toc' not in next_style and '\t' not in next_para.text:
+                                toc_section_end = j
+                                break
+        
+        # Look for the first actual chapter heading AFTER front matter
+        search_start = max(0, last_front_matter_index + 1)
+        for i in range(search_start, len(doc.paragraphs)):
+            para = doc.paragraphs[i]
+            text = para.text.strip().upper()
+            style_name = para.style.name.lower() if para.style else ""
+            
+            # CRITICAL: Skip TOC entries - check multiple indicators
+            is_toc_entry = (
+                'toc' in style_name or  # TOC style (toc 1, toc 2, etc.)
+                '\t' in para.text or  # Tab character
+                re.search(r'\s+\d+\s*$', para.text) or  # Page number at end
+                (len(text) < 100 and 'BAB' in text and any(char.isdigit() or char in 'IVX' for char in text))  # Short BAB entry likely TOC
+            )
+            
+            if is_toc_entry:
+                continue
+            
+            # CRITICAL: If we're still in TOC section area, skip
+            if toc_section_end and i < toc_section_end:
+                continue
+            
+            # Check if we're still in a front matter section by looking backwards
+            still_in_front_matter = False
+            for j in range(max(0, i - 30), i):
+                check_text = doc.paragraphs[j].text.strip().upper()
+                check_style = doc.paragraphs[j].style.name.lower() if doc.paragraphs[j].style else ""
+                if any(kw in check_text for kw in front_matter_keywords):
+                    # Check if this front matter section is still active
+                    # Look ahead to see if we've left it
+                    found_exit = False
+                    for k in range(j + 1, min(j + 100, len(doc.paragraphs))):
+                        exit_text = doc.paragraphs[k].text.strip().upper()
+                        exit_style = doc.paragraphs[k].style.name.lower() if doc.paragraphs[k].style else ""
+                        # If we find a non-TOC BAB I, we've exited
+                        if ('BAB I' in exit_text or 'BAB 1' in exit_text) and 'toc' not in exit_style and '\t' not in doc.paragraphs[k].text:
+                            if k <= i:  # We've passed it
+                                found_exit = True
+                                break
+                        # If we find another front matter section, we've moved on
+                        if any(kw in exit_text for kw in ['DAFTAR GAMBAR', 'DAFTAR TABEL']) and 'toc' not in exit_style:
+                            if k <= i:  # We've passed it
+                                found_exit = True
+                                break
+                    if not found_exit and k > i:
+                        still_in_front_matter = True
+                        break
+            
+            if still_in_front_matter:
+                continue
+            
+            # Check for actual chapter heading (not in TOC)
+            if ('BAB I' in text or 'BAB 1' in text or 'CHAPTER 1' in text) and len(text) > 10:
+                # Additional verification: check surrounding paragraphs for TOC indicators
+                is_toc_entry = False
+                for j in range(max(0, i - 5), min(i + 6, len(doc.paragraphs))):
+                    check_para = doc.paragraphs[j]
+                    check_style = check_para.style.name.lower() if check_para.style else ""
+                    if j != i and ('toc' in check_style or '\t' in check_para.text):
+                        is_toc_entry = True
+                        break
+                
+                if not is_toc_entry:
+                    print(f"[DEBUG] Found main content start at paragraph {i}: {text[:50]}")
+                    return i
+        
+        # If no chapter found, return after last front matter or default
+        if last_front_matter_index >= 0:
+            estimated_start = last_front_matter_index + 50  # More conservative estimate
+            print(f"[DEBUG] No clear BAB I found, using estimated start: {estimated_start}")
+            return estimated_start
+        
         # Default to middle of document
-        return len(doc.paragraphs) // 2
+        default_start = len(doc.paragraphs) // 2
+        print(f"[DEBUG] Using default main content start: {default_start}")
+        return default_start
 
     def _add_ai_main_content(self, doc: Document, user_data: Dict[str, Any], ai_content: str, structure_mapping: Dict[str, Any]) -> None:
         """Add main content using AI-enhanced formatting."""
@@ -3212,16 +3371,55 @@ class CompleteThesisBuilder:
             'saran': 'Saran'
         }
 
-        # Find chapter heading
+        # Find main content start to avoid inserting in front matter (DAFTAR ISI, etc.)
+        main_content_start = self._find_main_content_start(doc)
+        if main_content_start is None:
+            main_content_start = 0
+        
+        # Find chapter heading - ONLY in main content area (not in front matter)
         chapter_heading_index = None
         for i, para in enumerate(doc.paragraphs):
-            if f"BAB {self._to_roman(chapter_num)}" in para.text.upper():
+            # Skip front matter sections
+            if i < main_content_start:
+                continue
+            
+            para_text = para.text.upper()
+            
+            # Skip if this is in a front matter section (DAFTAR ISI, DAFTAR GAMBAR, etc.)
+            # Check if we're still in front matter by looking backwards
+            is_in_front_matter = False
+            for j in range(max(0, i - 10), i):
+                check_text = doc.paragraphs[j].text.upper()
+                if any(fm in check_text for fm in ['DAFTAR ISI', 'DAFTAR GAMBAR', 'DAFTAR TABEL', 'DAFTAR LAMPIRAN', 'TABLE OF CONTENTS']):
+                    is_in_front_matter = True
+                    break
+            
+            if is_in_front_matter:
+                continue
+            
+            # Check if this paragraph is a TOC entry (has tab or page number pattern)
+            if '\t' in para.text or re.search(r'\s+\d+\s*$', para.text):
+                # Likely a TOC entry, skip it
+                continue
+            
+            # Now check for actual chapter heading
+            if f"BAB {self._to_roman(chapter_num)}" in para_text:
+                # Verify this is not just a TOC entry - real chapter headings are usually longer or have specific formatting
+                # TOC entries are usually short and have page numbers
+                if len(para.text.strip()) < 50 or re.search(r'\d+\s*$', para.text.strip()):
+                    # Might be TOC entry, check next paragraph
+                    if i + 1 < len(doc.paragraphs):
+                        next_para = doc.paragraphs[i + 1]
+                        # If next paragraph also looks like TOC, skip
+                        if '\t' in next_para.text or re.search(r'\s+\d+\s*$', next_para.text):
+                            continue
+                
                 chapter_heading_index = i
-                print(f"[INFO] Found Chapter {chapter_num} heading at paragraph {i}")
+                print(f"[INFO] Found Chapter {chapter_num} heading at paragraph {i} (main content area)")
                 break
 
         if chapter_heading_index is None:
-            print(f"[WARNING] Chapter {chapter_num} heading not found")
+            print(f"[WARNING] Chapter {chapter_num} heading not found in main content area")
             return 0
 
         # Insert each subsection with heading
@@ -3244,6 +3442,14 @@ class CompleteThesisBuilder:
                 content_para = self._find_content_paragraph_after(doc, heading_index)
 
                 if content_para:
+                    # Check if this subsection already has substantial content (prevent duplicates)
+                    existing_content = content_para.text.strip()
+                    if len(existing_content) > 100:
+                        # Already has content - skip to prevent duplication
+                        print(f"[SKIP] Subsection {heading_text} already has content ({len(existing_content)} chars), skipping duplicate insertion")
+                        subsection_counter += 1
+                        continue
+                    
                     # Insert content
                     old_text = content_para.text[:50] if content_para.text else "[empty]"
                     content_para.clear()
@@ -3255,47 +3461,165 @@ class CompleteThesisBuilder:
                     print(f"[SUCCESS] {heading_text}: {len(subsection_content)} chars")
                     insertions += 1
                     current_index = doc.paragraphs.index(content_para) + 1
+                else:
+                    # No content paragraph found - check if next paragraphs already have this subsection content
+                    # Look ahead to see if subsection already exists with content
+                    subsection_num = f"{chapter_num}.{subsection_counter}"
+                    found_duplicate = False
+                    for check_idx in range(heading_index + 1, min(heading_index + 10, len(doc.paragraphs))):
+                        check_para = doc.paragraphs[check_idx]
+                        check_text = check_para.text.strip()
+                        # Check if this is another subsection heading with same number
+                        if re.match(rf'^{re.escape(subsection_num)}\s+', check_text):
+                            # Found duplicate subsection heading - skip
+                            print(f"[SKIP] Duplicate subsection {subsection_num} found at paragraph {check_idx}, skipping")
+                            found_duplicate = True
+                            break
+                        # Check if this paragraph has substantial content and is after our heading
+                        if len(check_text) > 100 and not re.match(r'^\d+\.\d+', check_text):
+                            # Might be content for this subsection - check if it's before next subsection
+                            # Look ahead for next subsection
+                            has_next_subsection = False
+                            for next_idx in range(check_idx + 1, min(check_idx + 5, len(doc.paragraphs))):
+                                next_para_text = doc.paragraphs[next_idx].text.strip()
+                                if re.match(rf'^{chapter_num}\.\d+\s+', next_para_text):
+                                    has_next_subsection = True
+                                    break
+                            if not has_next_subsection:
+                                # This might be content for our subsection - skip to avoid duplicate
+                                print(f"[SKIP] Subsection {heading_text} appears to already have content, skipping")
+                                found_duplicate = True
+                                break
+                    
+                    if found_duplicate:
+                        subsection_counter += 1
+                        continue
 
             subsection_counter += 1
 
         return insertions
 
     def _find_or_create_heading(self, doc, start_index, heading_text):
-        """Find existing heading or create new one."""
-        # Search for existing similar heading
-        for i in range(start_index, min(start_index + 15, len(doc.paragraphs))):
+        """Find existing heading or create new one. Prevents duplicates by checking exact subsection numbers.
+        CRITICAL: Only searches in main content area, not in front matter."""
+        # Get main content start to avoid front matter
+        main_content_start = self._find_main_content_start(doc) or 0
+        
+        # Ensure we're searching in main content area
+        if start_index < main_content_start:
+            start_index = main_content_start
+            print(f"[INFO] Adjusted start_index to main content start: {start_index}")
+        
+        # Extract subsection number (e.g., "1.1" from "1.1 Latar Belakang")
+        subsection_num = heading_text.split()[0] if heading_text else ""
+        
+        # Search for existing heading with EXACT subsection number match
+        for i in range(start_index, min(start_index + 20, len(doc.paragraphs))):
             para = doc.paragraphs[i]
-            if (para.style.name == 'Heading 3' or
-                'Subbab' in para.text or
-                heading_text.split()[0] in para.text):  # e.g., "1.1" in existing text
+            para_text = para.text.strip()
+            
+            # CRITICAL: Skip if we're still in front matter
+            if i < main_content_start:
+                continue
+            
+            # CRITICAL: Skip TOC entries
+            if '\t' in para_text or re.search(r'\s+\d+\s*$', para_text):
+                continue
+            
+            # CRITICAL: Skip if this is in a front matter section
+            for j in range(max(0, i - 5), min(i + 5, len(doc.paragraphs))):
+                check_text = doc.paragraphs[j].text.upper()
+                if any(fm in check_text for fm in ['DAFTAR ISI', 'DAFTAR GAMBAR', 'DAFTAR TABEL', 'DAFTAR LAMPIRAN']):
+                    continue  # Skip this paragraph
+            
+            # Check if this paragraph already has the exact subsection number
+            # Match pattern: "1.1" or "1.1 " at the start of the paragraph
+            if re.match(rf'^{re.escape(subsection_num)}\s+', para_text) or para_text.startswith(subsection_num + ' '):
+                # Found existing subsection with same number - reuse it
+                if para.style.name == 'Heading 3' or 'Heading' in str(para.style.name):
+                    # Update with proper heading text
+                    para.clear()
+                    para.add_run(heading_text)
+                    para.style = 'Heading 3'
+                    print(f"[INFO] Reusing existing subsection heading: {subsection_num}")
+                    return para
+                # If it's not a heading style but has the number, it might be content - skip
+                continue
+            
+            # Also check for Heading 3 style with similar content (but only if number matches)
+            if (para.style.name == 'Heading 3' and 
+                subsection_num in para_text and
+                not re.match(rf'^{re.escape(subsection_num)}\s+', para_text)):
+                # This might be a different subsection, skip it
+                continue
 
-                # Update with proper heading
+        # If not found, try to find a placeholder paragraph (ONLY in main content)
+        for i in range(start_index, min(start_index + 20, len(doc.paragraphs))):
+            para = doc.paragraphs[i]
+            para_text = para.text.strip()
+            
+            # CRITICAL: Skip if we're still in front matter
+            if i < main_content_start:
+                continue
+            
+            # CRITICAL: Skip TOC entries
+            if '\t' in para_text or re.search(r'\s+\d+\s*$', para_text):
+                continue
+            
+            # Skip if this paragraph already has a subsection number
+            if re.match(r'^\d+\.\d+\s+', para_text):
+                continue  # Already has a subsection number, skip
+            
+            if ('TULISKAN' in para_text.upper() or
+                'SUBBAB' in para_text.upper() or
+                (len(para_text.strip()) < 50 and not re.match(r'^\d+\.\d+', para_text))):  # Likely placeholder
+
                 para.clear()
                 para.add_run(heading_text)
                 para.style = 'Heading 3'
-                return para
-
-        # If not found, try to find a placeholder paragraph
-        for i in range(start_index, min(start_index + 15, len(doc.paragraphs))):
-            para = doc.paragraphs[i]
-            if ('TULISKAN' in para.text.upper() or
-                len(para.text.strip()) < 50):  # Likely placeholder
-
-                para.clear()
-                para.add_run(heading_text)
-                para.style = 'Heading 3'
+                print(f"[INFO] Created new subsection heading: {subsection_num}")
                 return para
 
         print(f"[WARNING] Could not find or create heading for: {heading_text}")
         return None
 
     def _find_content_paragraph_after(self, doc, heading_index):
-        """Find content paragraph after heading."""
+        """Find content paragraph after heading. CRITICAL: Only searches in main content area."""
+        # Get main content start to avoid front matter
+        main_content_start = self._find_main_content_start(doc) or 0
+        
+        # CRITICAL: Ensure heading is in main content
+        if heading_index < main_content_start:
+            print(f"[WARNING] Heading at index {heading_index} is in front matter (main content starts at {main_content_start})")
+            return None
+        
         for i in range(heading_index + 1, min(heading_index + 10, len(doc.paragraphs))):
+            # CRITICAL: Skip if we've gone back into front matter
+            if i < main_content_start:
+                continue
+            
             para = doc.paragraphs[i]
+            para_text = para.text.strip()
+            
+            # CRITICAL: Skip TOC entries
+            if '\t' in para_text or re.search(r'\s+\d+\s*$', para_text):
+                continue
+            
+            # CRITICAL: Skip if this is in a front matter section
+            is_in_front_matter = False
+            for j in range(max(0, i - 5), min(i + 5, len(doc.paragraphs))):
+                check_text = doc.paragraphs[j].text.upper()
+                if any(fm in check_text for fm in ['DAFTAR ISI', 'DAFTAR GAMBAR', 'DAFTAR TABEL', 'DAFTAR LAMPIRAN']):
+                    is_in_front_matter = True
+                    break
+            
+            if is_in_front_matter:
+                continue
+            
+            # Check if this is a content paragraph
             if ('isi paragraf' in str(para.style).lower() or
                 'Format paragraf' in para.text or
-                len(para.text.strip()) < 100):  # Likely content area
+                (len(para_text) < 100 and not re.match(r'^\d+\.\d+', para_text))):  # Likely content area, not subsection heading
 
                 return para
 

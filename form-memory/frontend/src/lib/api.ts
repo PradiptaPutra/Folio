@@ -879,37 +879,6 @@ export async function convertTemplate(templateFile: File, format: 'json' | 'xml'
   }
 }
 
-/**
- * Generate thesis with AI enhancement and perfect template adaptation
- */
-export async function generatePerfectThesis(
-  templateFile: File,
-  contentFile: File,
-  userData: FrontmatterData,
-  options: ThesisGenerationOptions = { use_ai: true, include_frontmatter: true }
-): Promise<ThesisGenerationResponse> {
-  try {
-    const formData = new FormData()
-    formData.append('template', templateFile)
-    formData.append('content', contentFile)
-    formData.append('user_data', JSON.stringify(userData))
-    formData.append('options', JSON.stringify(options))
-
-    const response = await apiClient.post<ThesisGenerationResponse>('/thesis/generate-perfect', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    })
-    return response.data
-  } catch (error) {
-    const axiosError = error as AxiosError
-    throw {
-      status: axiosError.response?.status || 500,
-      message: 'Failed to generate perfect thesis',
-      detail: axiosError.message,
-    } as ApiError
-  }
-}
 
 export default apiClient
 
