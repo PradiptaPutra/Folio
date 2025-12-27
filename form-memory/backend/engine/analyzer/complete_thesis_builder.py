@@ -555,83 +555,171 @@ class CompleteThesisBuilder:
         print(f"[INFO] Extracted template font: {default_font}")
         print(f"[INFO] Isi Paragraf style found: {isi_paragraf_style is not None}")
 
-        # PHASE 1: Structural Landmark Analysis (BEFORE cleaning)
-        print("[INFO] Phase 1: Analyzing template structural landmarks...")
-        landmark_chapters = {} # {num: paragraph_obj}
-        landmark_subsections = [] # list of (paragraph_obj, chapter_num, original_text)
+        # PHASE 1: Intelligent Adaptive Template Analysis
+        print("[INFO] Phase 1: Analyzing template with adaptive intelligence...")
         
-        current_chapter = 0
-        for i, para in enumerate(doc.paragraphs):
-            text = para.text.strip()
-            text_upper = text.upper()
-            if not text: continue
-
-            # Reset per-paragraph flags
-            is_ch = False
-            ch_num = 0
-
-            # 1. Detect Chapters
-            # Pattern: BAB I, BAB 1, CHAPTER 1 (handle Shift+Enter \v or \n and leading whitespace)
-            text_norm = text_upper.replace('\v', ' ').replace('\n', ' ').strip()
-            ch_match = re.search(r'^(BAB|CHAPTER)\s+([IVX\d]+)', text_norm)
-            if ch_match:
-                num_str = ch_match.group(2)
-                try:
-                    if num_str.isdigit(): ch_num = int(num_str)
-                    else: ch_num = self._roman_to_int(num_str)
-                    is_ch = True
-                except: pass
+        # Use intelligent template adapter if available
+        try:
+            from .intelligent_template_adapter import IntelligentTemplateAdapter
+            adapter = IntelligentTemplateAdapter(str(self.template_path), api_key=getattr(self, 'api_key', None))
+            template_structure = adapter.analyze_template()
             
-            # Alternative: Style-based for auto-numbered headers
-            elif (para.style and 'Heading 1' in str(para.style.name)) or (text_upper.startswith('BAB') and len(text) < 100):
-                check_num = 0
-                if any(kw in text_upper for kw in ['PENDAHULUAN', 'LATAR BELAKANG']): check_num = 1
-                elif any(kw in text_upper for kw in ['PUSTAKA', 'TEORI']): check_num = 2
-                elif any(kw in text_upper for kw in ['METODOLOGI', 'METODE']): check_num = 3
-                elif any(kw in text_upper for kw in ['ANALISIS', 'PERANCANGAN']): check_num = 4
-                elif any(kw in text_upper for kw in ['IMPLEMENTASI', 'HASIL', 'PEMBAHASAN']): check_num = 5
-                elif any(kw in text_upper for kw in ['PENUTUP', 'KESIMPULAN']): check_num = 6
-                
-                if check_num > 0:
-                    ch_num = check_num
-                    is_ch = True
-
-            if is_ch:
-                landmark_chapters[ch_num] = para
-                current_chapter = ch_num
-                print(f"[DEBUG] Landmark found: Chapter {ch_num} at paragraph {i}")
-                continue
-
-            # 2. Detect Subsections (Subbab)
-            # UII template often uses "Subbab" or "Anak Subbab" as placeholders, often numbered like "1.1 Subbab"
-            # Also detect numbered subsections like "1.1", "1.2", "1.1.1" that might not have "Subbab" text
-            # Use regex to catch variants like "1.1 Subbab", "Subbab [BAB I]", "1.1", "1.2", etc.
-            is_subsection = False
-            subsection_number = None
+            # Convert to landmark format for compatibility
+            landmark_chapters = {}
+            landmark_subsections = []
             
-            # Check for explicit "Subbab" text
-            if re.search(r'\b(Subbab|Anak Subbab)\b', text, re.I) and len(text) < 60:
-                is_subsection = True
-            # Check for numbered subsection pattern (e.g., "1.1", "1.2", "1.1.1") within current chapter
-            elif current_chapter > 0:
-                # Pattern: chapter_num.subsection_num (e.g., "1.1", "1.2") or chapter_num.subsection_num.subsub_num
-                subsection_pattern = rf'^{re.escape(str(current_chapter))}\.\d+(\.\d+)?\s*'
-                if re.match(subsection_pattern, text) and len(text) < 100:
-                    is_subsection = True
-                    # Extract the subsection number for better matching
-                    num_match = re.match(rf'^{re.escape(str(current_chapter))}\.(\d+)', text)
-                    if num_match:
-                        subsection_number = int(num_match.group(1))
+            for pattern in template_structure.chapter_patterns:
+                chapter_num = pattern.metadata.get('chapter_num')
+                if chapter_num:
+                    landmark_chapters[chapter_num] = self.doc.paragraphs[pattern.location]
+                    print(f"[ADAPTIVE] Found Chapter {chapter_num} at paragraph {pattern.location}: {pattern.text[:50]}")
             
-            if is_subsection:
+            for pattern in template_structure.subsection_patterns:
+                chapter_num = pattern.metadata.get('chapter_num', 0)
                 landmark_subsections.append({
-                    'para': para,
-                    'chapter': current_chapter,
-                    'is_anak': 'Anak' in text or 'ANAK' in text.upper() or (subsection_number and subsection_number > 10),
-                    'original_text': text,
-                    'subsection_number': subsection_number
+                    'para': self.doc.paragraphs[pattern.location],
+                    'chapter': chapter_num,
+                    'is_anak': pattern.metadata.get('is_child', False),
+                    'original_text': pattern.text,
+                    'subsection_number': pattern.metadata.get('subsection_num'),
+                    'full_number': pattern.metadata.get('full_number', '')
                 })
-                print(f"[DEBUG] Landmark found: Subsection anchor at paragraph {i} (Chapter {current_chapter}): {text}")
+                print(f"[ADAPTIVE] Found Subsection at paragraph {pattern.location} (Chapter {chapter_num}): {pattern.text[:50]}")
+            
+            # Store template structure and adapter for later use
+            self.template_structure = template_structure
+            self.intelligent_adapter = adapter
+            
+            # Use AI to enhance placement if available
+            if self.use_ai and self.api_key:
+                try:
+                    from ..ai.template_content_placer import TemplateContentPlacer
+                    placer = TemplateContentPlacer(api_key=self.api_key)
+                    
+                    # Prepare template analysis for AI
+                    template_analysis = {
+                        'chapters': [
+                            {
+                                'chapter_num': p.metadata.get('chapter_num'),
+                                'title': p.metadata.get('title', ''),
+                                'location': p.location
+                            }
+                            for p in template_structure.chapter_patterns
+                        ],
+                        'subsections': [
+                            {
+                                'chapter_num': p.metadata.get('chapter_num', 0),
+                                'text': p.text,
+                                'location': p.location
+                            }
+                            for p in template_structure.subsection_patterns
+                        ],
+                        'placeholders': [
+                            {
+                                'text': p.text,
+                                'pattern_type': p.metadata.get('pattern_type', 'unknown'),
+                                'location': p.location
+                            }
+                            for p in template_structure.placeholder_patterns
+                        ]
+                    }
+                    
+                    ai_placement = placer.analyze_template_structure_for_placement(
+                        str(self.template_path), template_analysis
+                    )
+                    
+                    self.ai_placement_recommendations = ai_placement
+                    print(f"[AI] Received {len(ai_placement.get('placement_zones', []))} AI placement recommendations")
+                    
+                except Exception as e:
+                    print(f"[WARNING] AI placement analysis failed: {e}")
+                    self.ai_placement_recommendations = None
+            
+        except Exception as e:
+            print(f"[WARNING] Intelligent adapter failed, using fallback detection: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Fallback to original detection
+            landmark_chapters = {} # {num: paragraph_obj}
+            landmark_subsections = [] # list of (paragraph_obj, chapter_num, original_text)
+            
+            current_chapter = 0
+            for i, para in enumerate(doc.paragraphs):
+                text = para.text.strip()
+                text_upper = text.upper()
+                if not text: continue
+
+                # Reset per-paragraph flags
+                is_ch = False
+                ch_num = 0
+
+                # 1. Detect Chapters - Enhanced patterns
+                text_norm = text_upper.replace('\v', ' ').replace('\n', ' ').strip()
+                ch_match = re.search(r'^(BAB|CHAPTER)\s+([IVX\d]+)', text_norm)
+                if ch_match:
+                    num_str = ch_match.group(2)
+                    try:
+                        if num_str.isdigit(): ch_num = int(num_str)
+                        else: ch_num = self._roman_to_int(num_str)
+                        is_ch = True
+                    except: pass
+                
+                # Alternative: Style-based for auto-numbered headers
+                elif (para.style and 'Heading 1' in str(para.style.name)) or (text_upper.startswith('BAB') and len(text) < 100):
+                    check_num = 0
+                    if any(kw in text_upper for kw in ['PENDAHULUAN', 'LATAR BELAKANG']): check_num = 1
+                    elif any(kw in text_upper for kw in ['PUSTAKA', 'TEORI']): check_num = 2
+                    elif any(kw in text_upper for kw in ['METODOLOGI', 'METODE']): check_num = 3
+                    elif any(kw in text_upper for kw in ['ANALISIS', 'PERANCANGAN']): check_num = 4
+                    elif any(kw in text_upper for kw in ['IMPLEMENTASI', 'HASIL', 'PEMBAHASAN']): check_num = 5
+                    elif any(kw in text_upper for kw in ['PENUTUP', 'KESIMPULAN']): check_num = 6
+                    
+                    if check_num > 0:
+                        ch_num = check_num
+                        is_ch = True
+
+                if is_ch:
+                    landmark_chapters[ch_num] = para
+                    current_chapter = ch_num
+                    print(f"[DEBUG] Landmark found: Chapter {ch_num} at paragraph {i}")
+                    continue
+
+                # 2. Detect Subsections - Enhanced patterns
+                is_subsection = False
+                subsection_number = None
+                
+                # Check for explicit "Subbab" text
+                if re.search(r'\b(Subbab|Anak Subbab|Sub-section|Subsection)\b', text, re.I) and len(text) < 60:
+                    is_subsection = True
+                # Check for numbered subsection pattern (e.g., "1.1", "1.2", "1.1.1")
+                elif current_chapter > 0:
+                    # Pattern: chapter_num.subsection_num (e.g., "1.1", "1.2") or chapter_num.subsection_num.subsub_num
+                    subsection_pattern = rf'^{re.escape(str(current_chapter))}\.\d+(\.\d+)?\s*'
+                    if re.match(subsection_pattern, text) and len(text) < 100:
+                        is_subsection = True
+                        num_match = re.match(rf'^{re.escape(str(current_chapter))}\.(\d+)', text)
+                        if num_match:
+                            subsection_number = int(num_match.group(1))
+                # Also check for generic numbered patterns (1.1, 2.1, etc.)
+                elif re.match(r'^\d+\.\d+', text) and len(text) < 100:
+                    is_subsection = True
+                    num_match = re.match(r'^(\d+)\.(\d+)', text)
+                    if num_match:
+                        subsection_number = int(num_match.group(2))
+                        detected_chapter = int(num_match.group(1))
+                        if detected_chapter > 0 and detected_chapter <= 10:
+                            current_chapter = detected_chapter
+                
+                if is_subsection:
+                    landmark_subsections.append({
+                        'para': para,
+                        'chapter': current_chapter,
+                        'is_anak': 'Anak' in text or 'ANAK' in text.upper() or (subsection_number and subsection_number > 10),
+                        'original_text': text,
+                        'subsection_number': subsection_number
+                    })
+                    print(f"[DEBUG] Landmark found: Subsection anchor at paragraph {i} (Chapter {current_chapter}): {text}")
 
         print(f"[INFO] Structure Analysis Complete: Found {len(landmark_chapters)} chapters and {len(landmark_subsections)} subsection anchors")
 
@@ -743,6 +831,18 @@ class CompleteThesisBuilder:
             current_sub_anchors = [s for s in landmark_subsections if s['chapter'] == chapter_num]
             print(f"[DEBUG] Chapter {chapter_num} has {len(current_sub_anchors)} sub-anchors (including Anak Subbab)")
             
+            # If intelligent adapter is available, use it to find additional insertion points
+            if hasattr(self, 'intelligent_adapter') and self.intelligent_adapter:
+                try:
+                    insertion_points = self.intelligent_adapter.get_content_insertion_points(chapter_num)
+                    print(f"[ADAPTIVE] Found {len(insertion_points)} intelligent insertion points for Chapter {chapter_num}")
+                    # Store for potential use
+                    if not hasattr(self, 'intelligent_insertion_points'):
+                        self.intelligent_insertion_points = {}
+                    self.intelligent_insertion_points[chapter_num] = insertion_points
+                except Exception as e:
+                    print(f"[WARNING] Failed to get intelligent insertion points: {e}")
+            
             # Find the chapter heading to update its text (remove "TULISKAN JUDUL...")
             last_inserted_para = None
             if chapter_num in landmark_chapters:
@@ -780,7 +880,23 @@ class CompleteThesisBuilder:
                 title_text = subsection_titles.get(key, key.replace('_', ' ').title())
                 
                 # Case A: We have a "Subbab" anchor for this position
-                if i < len(current_sub_anchors):
+                # Also check intelligent adapter if available
+                use_intelligent_insertion = False
+                if hasattr(self, 'template_structure') and self.template_structure:
+                    insertion_points = adapter.get_content_insertion_points(chapter_num)
+                    # Try to find matching insertion point
+                    for point_idx, (point_para_idx, point_meta) in enumerate(insertion_points):
+                        if point_meta.get('is_subsection') and point_idx == i:
+                            # Use intelligent insertion point
+                            try:
+                                anchor_para = doc.paragraphs[point_para_idx]
+                                use_intelligent_insertion = True
+                                print(f"[ADAPTIVE] Using intelligent insertion point at paragraph {point_para_idx}")
+                            except:
+                                pass
+                            break
+                
+                if i < len(current_sub_anchors) and not use_intelligent_insertion:
                     anchor = current_sub_anchors[i]
                     anchor_para = anchor['para']
                     
@@ -842,47 +958,71 @@ class CompleteThesisBuilder:
                         except:
                             pass
                 
-                # Case B: No anchor found - create subsection heading and content
+                # Case B: No anchor found - try intelligent insertion points first
                 if not target_para:
-                    # Create new subsection heading
-                    subsection_number = f"{chapter_num}.{subsection_counter}"
+                    # Try intelligent adapter insertion points
+                    intelligent_insertion_used = False
+                    if hasattr(self, 'intelligent_insertion_points') and chapter_num in self.intelligent_insertion_points:
+                        insertion_points = self.intelligent_insertion_points[chapter_num]
+                        # Find a suitable insertion point for this subsection index
+                        for point_para_idx, point_meta in insertion_points:
+                            # Check if this point is suitable (not already used, is a placeholder or content zone)
+                            if point_meta.get('type') in ['placeholder', 'content_zone']:
+                                try:
+                                    point_para = doc.paragraphs[point_para_idx]
+                                    # Check if this paragraph is still a placeholder
+                                    point_text = point_para.text.strip()
+                                    if (len(point_text) < 100 or 
+                                        any(ph in point_text.upper() for ph in ['TULISKAN', 'KETIK', 'ISI', 'SUBBAB', 'FORMAT PARAGRAF'])):
+                                        # Use this as target
+                                        target_para = point_para
+                                        intelligent_insertion_used = True
+                                        print(f"[ADAPTIVE] Using intelligent insertion point at paragraph {point_para_idx} for {key}")
+                                        break
+                                except:
+                                    continue
                     
-                    # Find insertion point (after chapter heading or last inserted content)
-                    insert_after = last_inserted_para
-                    if not insert_after and chapter_num in landmark_chapters:
-                        insert_after = landmark_chapters[chapter_num]
-                    
-                    # If still no insertion point, find the last paragraph in this chapter
-                    if not insert_after:
-                        # Find chapter heading and use the paragraph after it
-                        for para_idx, para in enumerate(doc.paragraphs):
-                            if f"BAB {self._to_roman(chapter_num)}" in para.text.upper():
-                                if para_idx + 1 < len(doc.paragraphs):
-                                    insert_after = doc.paragraphs[para_idx + 1]
-                                    break
-                    
-                    if insert_after:
-                        try:
-                            # Create subsection heading paragraph
-                            heading_para = self._insert_paragraph_after(insert_after, "")
-                            heading_run = heading_para.add_run(f"{subsection_number} {title_text}")
-                            heading_run.bold = True
+                    # If intelligent insertion didn't work, create new subsection
+                    if not target_para:
+                        # Create new subsection heading
+                        subsection_number = f"{chapter_num}.{subsection_counter}"
+                        
+                        # Find insertion point (after chapter heading or last inserted content)
+                        insert_after = last_inserted_para
+                        if not insert_after and chapter_num in landmark_chapters:
+                            insert_after = landmark_chapters[chapter_num]
+                        
+                        # If still no insertion point, find the last paragraph in this chapter
+                        if not insert_after:
+                            # Find chapter heading and use the paragraph after it
+                            for para_idx, para in enumerate(doc.paragraphs):
+                                if f"BAB {self._to_roman(chapter_num)}" in para.text.upper():
+                                    if para_idx + 1 < len(doc.paragraphs):
+                                        insert_after = doc.paragraphs[para_idx + 1]
+                                        break
+                        
+                        if insert_after:
                             try:
-                                heading_para.style = 'Heading 3'
-                            except:
-                                pass
-                            
-                            # Create content paragraph after heading
-                            target_para = self._insert_paragraph_after(heading_para, "")
-                            last_inserted_para = heading_para
-                            total_insertions += 1
-                            print(f"[SUCCESS] Created subsection heading and content for {key} ({subsection_number}) in Chapter {chapter_num}")
-                        except Exception as e:
-                            print(f"[WARNING] Failed to create subsection for {key}: {e}")
-                            import traceback
-                            traceback.print_exc()
-                    else:
-                        print(f"[WARNING] Nowhere to put {key} in Chapter {chapter_num} - no insertion point")
+                                # Create subsection heading paragraph
+                                heading_para = self._insert_paragraph_after(insert_after, "")
+                                heading_run = heading_para.add_run(f"{subsection_number} {title_text}")
+                                heading_run.bold = True
+                                try:
+                                    heading_para.style = 'Heading 3'
+                                except:
+                                    pass
+                                
+                                # Create content paragraph after heading
+                                target_para = self._insert_paragraph_after(heading_para, "")
+                                last_inserted_para = heading_para
+                                total_insertions += 1
+                                print(f"[SUCCESS] Created subsection heading and content for {key} ({subsection_number}) in Chapter {chapter_num}")
+                            except Exception as e:
+                                print(f"[WARNING] Failed to create subsection for {key}: {e}")
+                                import traceback
+                                traceback.print_exc()
+                        else:
+                            print(f"[WARNING] Nowhere to put {key} in Chapter {chapter_num} - no insertion point")
 
                 if target_para:
                     target_para.clear()
