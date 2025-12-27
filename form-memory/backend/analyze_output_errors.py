@@ -1,78 +1,138 @@
 """
-Analyze the output document to identify formatting errors.
+Analyze output files to identify content placement errors.
 """
 
 from docx import Document
 import re
+from pathlib import Path
 
-output_path = r"C:\Folio\form-memory\storage\outputs\Skripsi_Redify.docx"
-doc = Document(output_path)
+output1 = r"C:\Folio\form-memory\storage\outputs\Skripsi_Gawx.docx"
+output2 = r"C:\Folio\form-memory\storage\outputs\Skripsi_Arsyad.docx"
 
-print("=" * 80)
-print("OUTPUT DOCUMENT ERROR ANALYSIS")
-print("=" * 80)
-
-issues = []
-
-# Check for problematic text patterns
-for i, para in enumerate(doc.paragraphs):
-    text = para.text.strip()
+def analyze_document(doc_path, name):
+    """Analyze a document to find content placement issues."""
+    if not Path(doc_path).exists():
+        print(f"[SKIP] File not found: {doc_path}")
+        return
     
-    # Check for "Disusun Oleh:" in wrong place
-    if "Disusun Oleh:" in text and i > 50:  # Not in front matter
-        issues.append(f"Line {i}: 'Disusun Oleh:' found in main content")
+    print("=" * 80)
+    print(f"ANALYZING: {name}")
+    print("=" * 80)
     
-    # Check for subsections with missing chapter numbers
-    if re.match(r'^\.\d+', text):  # Starts with .1, .2, etc.
-        issues.append(f"Line {i}: Subsection missing chapter number: '{text[:50]}'")
+    doc = Document(doc_path)
     
-    # Check for empty subsections
-    if re.match(r'^\d+\.\d+', text) and len(text) < 30:
-        next_para_idx = i + 1
-        if next_para_idx < len(doc.paragraphs):
-            next_text = doc.paragraphs[next_para_idx].text.strip()
-            # If next paragraph is also a subsection or BAB, this one is empty
-            if re.match(r'^\d+\.\d+', next_text) or re.match(r'^BAB', next_text, re.I):
-                issues.append(f"Line {i}: Empty subsection: '{text}'")
+    # Front matter indicators
+    front_matter_keywords = [
+        'DAFTAR ISI', 'DAFTAR TABEL', 'DAFTAR GAMBAR', 'DAFTAR SINGKATAN',
+        'ABSTRACT', 'ABSTRAK', 'KATA PENGANTAR', 'PREFACE',
+        'HALAMAN JUDUL', 'HALAMAN PENGESAHAN', 'LEMBAR PERSETUJUAN',
+        'TABLE OF CONTENTS', 'LIST OF TABLES', 'LIST OF FIGURES'
+    ]
     
-    # Check for misplaced BAB headings
-    if re.match(r'^BAB\s+[IVX]', text, re.I):
-        # Check if it's in the middle of content (not at start of chapter)
-        if i > 0:
-            prev_text = doc.paragraphs[i-1].text.strip()
-            if not re.match(r'^\d+\.\d+', prev_text) and len(prev_text) > 10:
-                issues.append(f"Line {i}: BAB heading may be misplaced: '{text}'")
+    # Main content indicators
+    main_content_keywords = [
+        'BAB I', 'BAB II', 'BAB III', 'BAB IV', 'BAB V', 'BAB VI',
+        'CHAPTER 1', 'CHAPTER 2', 'CHAPTER 3',
+        'PENDAHULUAN', 'TINJAUAN PUSTAKA', 'METODOLOGI'
+    ]
     
-    # Check for metadata at end
-    if i > len(doc.paragraphs) - 5:
-        if re.match(r'^\d{8}', text) or "Informatika" in text or "94523999" in text:
-            issues.append(f"Line {i}: Metadata found in content: '{text[:50]}'")
+    # Track sections
+    front_matter_sections = []
+    main_content_sections = []
+    misplaced_content = []
+    
+    in_front_matter = True
+    front_matter_end = None
+    
+    for i, para in enumerate(doc.paragraphs):
+        text = para.text.strip()
+        if not text:
+            continue
+        
+        text_upper = text.upper()
+        
+        # Check if we're in front matter
+        if any(keyword in text_upper for keyword in front_matter_keywords):
+            front_matter_sections.append({
+                'para_idx': i,
+                'text': text[:80],
+                'type': 'front_matter'
+            })
+            in_front_matter = True
+            front_matter_end = i
+        
+        # Check if we've entered main content
+        if any(keyword in text_upper for keyword in main_content_keywords):
+            if in_front_matter:
+                print(f"[STRUCTURE] Front matter ends around paragraph {i}")
+                front_matter_end = i
+            in_front_matter = False
+            main_content_sections.append({
+                'para_idx': i,
+                'text': text[:80],
+                'type': 'main_content'
+            })
+        
+        # Check for content that looks like it should be in main content but is in front matter
+        if in_front_matter and front_matter_end and i > front_matter_end:
+            # Check if this looks like chapter content
+            if (re.match(r'^\d+\.\d+', text) or  # Subsection numbering
+                len(text) > 200 or  # Long paragraphs (likely content)
+                any(kw in text_upper for kw in ['LATAR BELAKANG', 'RUMUSAN MASALAH', 'TUJUAN', 'MANFAAT'])):
+                misplaced_content.append({
+                    'para_idx': i,
+                    'text': text[:100],
+                    'issue': 'Content in front matter area'
+                })
+    
+    print(f"\n[STRUCTURE ANALYSIS]")
+    print(f"  Front matter sections: {len(front_matter_sections)}")
+    print(f"  Main content sections: {len(main_content_sections)}")
+    print(f"  Potential misplaced content: {len(misplaced_content)}")
+    
+    if front_matter_sections:
+        print(f"\n  Front Matter Sections Found:")
+        for section in front_matter_sections[:10]:
+            print(f"    Para {section['para_idx']}: {section['text']}")
+    
+    if main_content_sections:
+        print(f"\n  Main Content Sections Found:")
+        for section in main_content_sections[:10]:
+            print(f"    Para {section['para_idx']}: {section['text']}")
+    
+    if misplaced_content:
+        print(f"\n  [ERROR] MISPLACED CONTENT DETECTED:")
+        for item in misplaced_content[:10]:
+            print(f"    Para {item['para_idx']}: {item['text']}")
+            print(f"      Issue: {item['issue']}")
+    
+    # Check for content in Daftar Isi area
+    print(f"\n  [DAFTAR ISI CHECK]")
+    daftar_isi_paragraphs = []
+    for i, para in enumerate(doc.paragraphs):
+        text = para.text.strip()
+        if 'DAFTAR ISI' in text.upper() or 'TABLE OF CONTENTS' in text.upper():
+            # Check next 50 paragraphs for content
+            for j in range(i, min(i + 50, len(doc.paragraphs))):
+                next_para = doc.paragraphs[j]
+                next_text = next_para.text.strip()
+                # Check if this looks like chapter content
+                if (re.match(r'^\d+\.\d+', next_text) or  # Subsection
+                    (len(next_text) > 150 and not any(kw in next_text.upper() for kw in ['DAFTAR', 'TABLE', 'LIST', 'ABSTRACT']))):
+                    daftar_isi_paragraphs.append({
+                        'para_idx': j,
+                        'text': next_text[:100],
+                        'distance_from_daftar_isi': j - i
+                    })
+    
+    if daftar_isi_paragraphs:
+        print(f"    [ERROR] Found {len(daftar_isi_paragraphs)} paragraphs with content-like text near Daftar Isi:")
+        for item in daftar_isi_paragraphs[:5]:
+            print(f"      Para {item['para_idx']} (distance: {item['distance_from_daftar_isi']}): {item['text']}")
+    else:
+        print(f"    [OK] No content found in Daftar Isi area")
 
-print(f"\nFound {len(issues)} issues:\n")
-for issue in issues:
-    print(f"  [X] {issue}")
-
-# Check subsection structure
-print("\n" + "=" * 80)
-print("SUBSECTION STRUCTURE ANALYSIS")
-print("=" * 80)
-
-subsections = []
-for i, para in enumerate(doc.paragraphs):
-    text = para.text.strip()
-    if re.match(r'^\d+\.\d+', text):
-        subsections.append((i, text[:60]))
-
-print(f"\nFound {len(subsections)} subsections:")
-for idx, (line_num, text) in enumerate(subsections, 1):
-    print(f"  {idx}. Line {line_num}: {text}")
-
-# Check for missing chapter numbers
-print("\nChecking for subsections with missing chapter numbers:")
-for i, para in enumerate(doc.paragraphs):
-    text = para.text.strip()
-    if re.match(r'^\.\d+', text):  # Starts with .1, .2, etc. (missing chapter)
-        print(f"  [X] Line {i}: Missing chapter number: '{text[:50]}'")
-
-print("\n" + "=" * 80)
-
+# Analyze both files
+analyze_document(output1, "Skripsi_Gawx.docx")
+print("\n\n")
+analyze_document(output2, "Skripsi_Arsyad.docx")

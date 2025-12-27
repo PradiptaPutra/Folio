@@ -134,6 +134,12 @@ class IntelligentTemplateAdapter:
         self._extract_font_info()
         self._identify_template_type()
         
+        # CRITICAL: Identify document zones (front matter vs main content)
+        self._document_zones = self._identify_document_zones()
+        
+        # Filter out front matter chapters and subsections
+        self._filter_front_matter_patterns()
+        
         # AI enhancement if available
         if self.ai_available:
             self._ai_enhance_analysis()
@@ -437,6 +443,50 @@ class IntelligentTemplateAdapter:
         
         print(f"[ADAPTIVE] Template type identified: {self.structure.template_type}")
     
+    def _filter_front_matter_patterns(self) -> None:
+        """Filter out patterns that are in front matter (TOC, etc.)."""
+        if not hasattr(self, '_document_zones'):
+            return
+        
+        zones = self._document_zones
+        main_content_start = zones.get('main_content_start')
+        
+        if main_content_start is None:
+            return
+        
+        # Filter chapters - only keep those in main content
+        original_chapters = self.structure.chapter_patterns.copy()
+        self.structure.chapter_patterns = [
+            p for p in original_chapters
+            if p.location >= main_content_start
+        ]
+        
+        filtered_count = len(original_chapters) - len(self.structure.chapter_patterns)
+        if filtered_count > 0:
+            print(f"[FILTER] Removed {filtered_count} chapter patterns from front matter")
+        
+        # Filter subsections - only keep those in main content
+        original_subsections = self.structure.subsection_patterns.copy()
+        self.structure.subsection_patterns = [
+            p for p in original_subsections
+            if p.location >= main_content_start
+        ]
+        
+        filtered_count = len(original_subsections) - len(self.structure.subsection_patterns)
+        if filtered_count > 0:
+            print(f"[FILTER] Removed {filtered_count} subsection patterns from front matter")
+        
+        # Filter placeholders - only keep those in main content
+        original_placeholders = self.structure.placeholder_patterns.copy()
+        self.structure.placeholder_patterns = [
+            p for p in original_placeholders
+            if p.location >= main_content_start
+        ]
+        
+        filtered_count = len(original_placeholders) - len(self.structure.placeholder_patterns)
+        if filtered_count > 0:
+            print(f"[FILTER] Removed {filtered_count} placeholder patterns from front matter")
+    
     def _ai_enhance_analysis(self) -> None:
         """Use AI to enhance template analysis."""
         if not self.ai_available:
@@ -450,9 +500,112 @@ class IntelligentTemplateAdapter:
         # 3. Validate detected patterns
         # 4. Fill in missing information
     
+    def _identify_document_zones(self) -> Dict[str, int]:
+        """
+        Identify document zones: front matter, main content, back matter.
+        
+        Returns:
+            Dictionary with zone boundaries: {'front_matter_end': int, 'main_content_start': int, 'back_matter_start': int}
+        """
+        zones = {
+            'front_matter_end': 0,
+            'main_content_start': None,
+            'back_matter_start': None
+        }
+        
+        # Front matter indicators
+        front_matter_keywords = [
+            'DAFTAR ISI', 'DAFTAR TABEL', 'DAFTAR GAMBAR', 'DAFTAR SINGKATAN',
+            'TABLE OF CONTENTS', 'LIST OF TABLES', 'LIST OF FIGURES',
+            'ABSTRACT', 'ABSTRAK', 'KATA PENGANTAR', 'PREFACE',
+            'HALAMAN JUDUL', 'HALAMAN PENGESAHAN', 'LEMBAR PERSETUJUAN'
+        ]
+        
+        # Main content indicators (actual chapter headings)
+        main_content_keywords = [
+            'BAB I', 'BAB 1', 'BAB II', 'BAB 2', 'BAB III', 'BAB 3',
+            'CHAPTER 1', 'CHAPTER I', 'PENDAHULUAN'
+        ]
+        
+        # Back matter indicators
+        back_matter_keywords = [
+            'DAFTAR PUSTAKA', 'BIBLIOGRAPHY', 'REFERENCES',
+            'LAMPIRAN', 'APPENDIX', 'APPENDICES'
+        ]
+        
+        in_front_matter = True
+        front_matter_end = 0
+        main_content_start = None
+        back_matter_start = None
+        
+        for i, para in enumerate(self.doc.paragraphs):
+            text = para.text.strip()
+            if not text:
+                continue
+            
+            text_upper = text.upper()
+            
+            # Check for front matter sections
+            if in_front_matter:
+                if any(keyword in text_upper for keyword in front_matter_keywords):
+                    front_matter_end = i
+                    # Continue looking for main content start
+            
+            # Check for main content start (actual chapter)
+            if main_content_start is None:
+                # Must be a real chapter heading, not just a TOC entry
+                is_real_chapter = False
+                
+                # Check if this is a chapter pattern
+                for pattern, pattern_type, confidence in self.CHAPTER_PATTERNS:
+                    match = re.match(pattern, text_upper, re.IGNORECASE)
+                    if match:
+                        # Additional check: not a TOC entry
+                        # TOC entries usually have page numbers or are in TOC style
+                        is_toc_entry = (
+                            '\t' in text or  # Tab character (common in TOC)
+                            para.style and 'toc' in para.style.name.lower() or
+                            re.search(r'\d+\s*$', text) or  # Ends with number (page number)
+                            i < front_matter_end + 20  # Too close to front matter
+                        )
+                        
+                        if not is_toc_entry:
+                            is_real_chapter = True
+                            break
+                
+                # Also check for semantic chapter indicators
+                if not is_real_chapter:
+                    if any(keyword in text_upper for keyword in main_content_keywords):
+                        # Make sure it's not in TOC area
+                        if i > front_matter_end + 5:  # At least 5 paragraphs after front matter
+                            is_real_chapter = True
+                
+                if is_real_chapter:
+                    main_content_start = i
+                    in_front_matter = False
+                    zones['main_content_start'] = i
+                    zones['front_matter_end'] = front_matter_end
+                    print(f"[ZONE] Main content starts at paragraph {i}: {text[:60]}")
+            
+            # Check for back matter
+            if main_content_start is not None and back_matter_start is None:
+                if any(keyword in text_upper for keyword in back_matter_keywords):
+                    back_matter_start = i
+                    zones['back_matter_start'] = i
+                    break
+        
+        # If main content start not found, use first chapter pattern location
+        if zones['main_content_start'] is None and self.structure.chapter_patterns:
+            first_chapter = min(self.structure.chapter_patterns, key=lambda x: x.location)
+            zones['main_content_start'] = first_chapter.location
+            print(f"[ZONE] Using first chapter pattern as main content start: paragraph {first_chapter.location}")
+        
+        return zones
+    
     def get_content_insertion_points(self, chapter_num: int) -> List[Tuple[int, Dict[str, Any]]]:
         """
         Get optimal content insertion points for a chapter.
+        CRITICAL: Only returns points in MAIN CONTENT area, not front matter.
         
         Args:
             chapter_num: Chapter number
@@ -462,45 +615,87 @@ class IntelligentTemplateAdapter:
         """
         insertion_points = []
         
+        # First, identify document zones
+        if not hasattr(self, '_document_zones'):
+            self._document_zones = self._identify_document_zones()
+        
+        zones = self._document_zones
+        main_content_start = zones.get('main_content_start')
+        
+        if main_content_start is None:
+            print(f"[WARNING] Could not identify main content start. Skipping insertion points for chapter {chapter_num}.")
+            return insertion_points
+        
         # Find chapter
         chapter_pattern = None
         for pattern in self.structure.chapter_patterns:
             if pattern.metadata.get('chapter_num') == chapter_num:
-                chapter_pattern = pattern
-                break
+                # CRITICAL: Only use chapters that are in main content area
+                if pattern.location >= main_content_start:
+                    chapter_pattern = pattern
+                    break
         
         if not chapter_pattern:
+            print(f"[WARNING] Chapter {chapter_num} not found in main content area (main content starts at {main_content_start})")
             return insertion_points
         
         chapter_start = chapter_pattern.location
         
+        # Verify chapter is in main content (not in TOC)
+        if chapter_start < main_content_start:
+            print(f"[ERROR] Chapter {chapter_num} at paragraph {chapter_start} is in front matter (main content starts at {main_content_start}). Skipping.")
+            return insertion_points
+        
         # Find subsections in this chapter
         chapter_subsections = [
             p for p in self.structure.subsection_patterns
-            if p.metadata.get('chapter_num') == chapter_num
+            if p.metadata.get('chapter_num') == chapter_num and p.location >= main_content_start
         ]
         
-        # Find placeholders and content zones after chapter
+        # Find placeholders and content zones after chapter (ONLY in main content)
         for i in range(chapter_start + 1, len(self.doc.paragraphs)):
-            para = self.doc.paragraphs[i]
-            text = para.text.strip()
+            # Stop if we hit back matter
+            if zones.get('back_matter_start') and i >= zones['back_matter_start']:
+                break
             
             # Stop if we hit next chapter
             if any(p.location == i and p.pattern_type == 'chapter' 
                    for p in self.structure.chapter_patterns):
                 break
             
+            para = self.doc.paragraphs[i]
+            text = para.text.strip()
+            
+            # CRITICAL: Skip if this is in front matter
+            if i < main_content_start:
+                continue
+            
+            # CRITICAL: Skip TOC-like entries
+            # TOC entries often have tabs, page numbers, or are very short
+            is_toc_like = (
+                '\t' in text or  # Tab character
+                (para.style and 'toc' in para.style.name.lower()) or
+                (len(text) < 30 and re.search(r'\d+\s*$', text)) or  # Short text ending with number
+                re.match(r'^[A-Z\s]+\s+\d+$', text)  # "SECTION NAME    5" format
+            )
+            
+            if is_toc_like:
+                continue
+            
             # Check if this is a good insertion point
             is_placeholder = any(p.location == i for p in self.structure.placeholder_patterns)
             is_content_zone = any(p.location == i for p in self.structure.content_zones)
             is_subsection = any(p.location == i for p in chapter_subsections)
             
-            if is_placeholder or is_content_zone:
+            # Additional validation: content should not be too short (TOC entries are short)
+            if (is_placeholder or is_content_zone) and len(text) > 20:
                 insertion_points.append((i, {
                     'type': 'placeholder' if is_placeholder else 'content_zone',
                     'is_subsection': is_subsection,
-                    'text': text[:50]
+                    'text': text[:50],
+                    'in_main_content': True
                 }))
         
+        print(f"[INSERTION] Found {len(insertion_points)} valid insertion points for Chapter {chapter_num} (main content area only)")
         return insertion_points
 

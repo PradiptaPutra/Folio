@@ -568,23 +568,39 @@ class CompleteThesisBuilder:
             landmark_chapters = {}
             landmark_subsections = []
             
+            # CRITICAL: Get document zones to ensure we don't insert in front matter
+            document_zones = adapter._document_zones if hasattr(adapter, '_document_zones') else {}
+            main_content_start = document_zones.get('main_content_start')
+            
+            if main_content_start:
+                print(f"[ADAPTIVE] Main content starts at paragraph {main_content_start}")
+            else:
+                print(f"[WARNING] Could not identify main content start - may insert in wrong areas!")
+            
             for pattern in template_structure.chapter_patterns:
                 chapter_num = pattern.metadata.get('chapter_num')
-                if chapter_num:
-                    landmark_chapters[chapter_num] = self.doc.paragraphs[pattern.location]
+                # CRITICAL: Only use chapters in main content area
+                if chapter_num and (main_content_start is None or pattern.location >= main_content_start):
+                    landmark_chapters[chapter_num] = doc.paragraphs[pattern.location]
                     print(f"[ADAPTIVE] Found Chapter {chapter_num} at paragraph {pattern.location}: {pattern.text[:50]}")
+                elif chapter_num:
+                    print(f"[ADAPTIVE] SKIPPED Chapter {chapter_num} at paragraph {pattern.location} - in front matter")
             
             for pattern in template_structure.subsection_patterns:
                 chapter_num = pattern.metadata.get('chapter_num', 0)
-                landmark_subsections.append({
-                    'para': self.doc.paragraphs[pattern.location],
-                    'chapter': chapter_num,
-                    'is_anak': pattern.metadata.get('is_child', False),
-                    'original_text': pattern.text,
-                    'subsection_number': pattern.metadata.get('subsection_num'),
-                    'full_number': pattern.metadata.get('full_number', '')
-                })
-                print(f"[ADAPTIVE] Found Subsection at paragraph {pattern.location} (Chapter {chapter_num}): {pattern.text[:50]}")
+                # CRITICAL: Only use subsections in main content area
+                if main_content_start is None or pattern.location >= main_content_start:
+                    landmark_subsections.append({
+                        'para': doc.paragraphs[pattern.location],
+                        'chapter': chapter_num,
+                        'is_anak': pattern.metadata.get('is_child', False),
+                        'original_text': pattern.text,
+                        'subsection_number': pattern.metadata.get('subsection_num'),
+                        'full_number': pattern.metadata.get('full_number', '')
+                    })
+                    print(f"[ADAPTIVE] Found Subsection at paragraph {pattern.location} (Chapter {chapter_num}): {pattern.text[:50]}")
+                else:
+                    print(f"[ADAPTIVE] SKIPPED Subsection at paragraph {pattern.location} - in front matter")
             
             # Store template structure and adapter for later use
             self.template_structure = template_structure
